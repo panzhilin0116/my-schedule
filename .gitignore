@@ -11,3 +11,6 @@ desktop.ini
 
 # 无头浏览器测量脚本的临时 profile 与产物（含浏览器 cookie，绝不入库）
 .measure/
+
+# 发布产物：由 dev/build-v2.mjs 生成，只用于打包上传
+v2/dist/
