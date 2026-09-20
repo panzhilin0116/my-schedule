@@ -1,260 +1,411 @@
-# 开发计划 · 个人日程管理系统 v1
+# 个人日程管理系统 · 开发计划（第一版）
 
-依据：`PRD.md` v1.0（唯一依据）
-制定日期：2026-09-20
-本文件只规定"怎么做、按什么顺序做、做到什么程度算完"，不修改 PRD 的任何需求。
+版本：v2.0
+日期：2026-09-20
+依据：`PRD.md` v2.0（唯一开发依据）。旧云端版计划已存档为 `DEV_PLAN_v1存档.md`。
 
 ---
 
-## 一、技术选型与理由
+## 0. 技术选型（先定，后续阶段全部遵守）
 
-| 项目 | 选择 | 理由 |
+| 维度 | 选型 | 理由 |
 |---|---|---|
-| 前端 | 原生 ES Module + 手写轻量渲染层，**零构建步骤** | 本机没有独立 Node/npm（仅可借用的裸 node.exe，不带 npm）。装了也能用，但引入 npm + 打包器不会带来任何 PRD 要求的能力，只会增加构建失败面。部署产物要求就是"静态文件 + index.html"，直接手写源码即产物 |
-| 路由 | 哈希路由（`#/timetable` 等） | 免服务器 rewrite，刷新与深链都能落到 `index.html`，不依赖 `prepare_site.spa` |
-| 状态 | 单一 store 模块 + 订阅式重渲染 | 单页 6 视图、每表 < 500 行，虚拟 DOM 与响应式框架都属多余开销 |
-| 图表 | 手写 SVG 元件（进度环 / 柱状 / 环形 / 热力格） | 只有 4 种图形，引图表库会让移动端首屏体积翻倍 |
-| 后端 | 一个 `app` Edge Function（Deno + TypeScript），入口 `functions/index.ts` | 平台的唯一服务端形态；浏览器只同源调 `/functions/v1/app` |
-| 数据 | 平台托管 Postgres（Supabase 系），schema `app`，7 张表 | 见 PRD 7.2；迁移只能通过平台的受限 DDL 接口执行 |
-| 鉴权 | 站点网关非公开模式（PRD 7.1，附注已确认接受该范围） | 不做注册登录 |
-| 字体 | 系统等宽 + 系统无衬线栈，**不引外部字体 CDN** | 免外部依赖与阻塞请求 |
-| 部署 | `prepare_site` 冻结草稿 → `publish_site` 发布 | 见 PRD 第 8 节 M1 |
+| 框架 | **无框架，原生 ES Module** | PRD 无后端、无构建需求；本机无 npm，避免引入打包链 |
+| 语言 | 原生 HTML + CSS + JavaScript（`.js`，`type="module"`） | 直接浏览器运行，零编译 |
+| 渲染 | 手写轻量虚拟：每视图一个 `render(state)` 返回 DOM，通过 `lib/dom.js` 的 `h()` 辅助建节点 | 无框架也能保持"数据→视图"单向 |
+| 路由 | 自实现 Hash 路由（`#/`、`#/timetable`、`#/tasks`） | PRD §2 要求 Hash 路由 |
+| 数据存储 | 课表/校历=内置常量；日程=`localStorage['schedule.tasks.v1']` | PRD §1、§5 |
+| 样式 | 单个 `styles.css` + CSS 自定义属性做主题令牌；断点仅 `640px` | PRD §2 |
+| 构建 | **无**。源文件即产物 | 本机无 node 生态 |
+| 本地预览 | `node.exe dev/serve.mjs`（静态文件服务器，见 S0） | 本机唯一可用解释器 |
+| 单元/渲染测试 | `node.exe --test v2/tests/*.test.mjs`（Node 内置 test runner，DOM 用桩） | 无 npm 依赖 |
+| 部署 | 复用现有 Qoder 站点，发布 `v2/` 为站点根 | PRD §2「沿用现有站点」 |
+| 浏览器验证 | browser-use MCP（截图 + snapshot + `element.click()`） | 见项目记忆：预览标签页隐藏，只能用 element.click() |
 
-本地工具链事实（决定验证方式，不要假设可 `npm install`）：
-- node：`C:\Users\34118\AppData\Local\OfficePLUSAgent\resources\runtime\node.exe`（v24.15.0，裸运行时，无 npm）
-- python：3.13.15，用作静态服务器
-- 无 Deno → `functions/` 的 TS 入口无法本地类型检查，只能在部署后由真实请求验证；handler 的业务逻辑写成 `.mjs`，可用 node 直接跑真实代码
+> 本机约定：PATH 无 `node`。所有命令用
+> `NODE="/c/Users/34118/AppData/Local/OfficePLUSAgent/resources/runtime/node.exe"`（Node v24）。
+> 不要 `npm install`、不要新建 `package.json`、不要加构建步骤。
 
----
-
-## 二、目录结构（一次性定义，后续阶段引用）
-
-```
-D:\my_schedule\
-  PRD.md                     已存在
-  DEV_PLAN.md                本文件
-  web\                       webDirectory（源码即产物，无构建）
-    index.html               已存在（骨架：starfield / rail / tabbar / topbar / view / modal-root / toast-root）
-    styles.css               设计 token、布局、组件、响应式
-    app.js                   启动、路由、视图注册、全局快捷键
-    lib\
-      api.js                 requestJson、ApiError、isWriteOutcomeUnknown、接口封装
-      store.js               数据仓库：加载、乐观更新、订阅、失效重取
-      time.js                周次/节次/日期/时长/连续天数计算
-      dom.js                 h() 建元素、mount()、clear()
-      ui.js                  Modal/抽屉、表单字段渲染、Toast+撤销、确认框、骨架、空态、错误态、左滑
-      charts.js              progressRing、barSeries、donut、heatGrid
-    views\
-      home.js  timetable.js  tasks.js  research.js  workout.js  settings.js
-  functions\                 functionDirectory（Deno 运行时）
-    index.ts                 入口：Deno.serve(serveSite(handleApp, {createClient, env}))
-    adapter.mjs              平台提供，**保持原样不改**
-    handler.mjs              动作路由 + 方法校验 + 响应封装
-    registry.mjs             7 张表的列白名单、逐字段校验器、索引与排序规则
-    rules.mjs                跨行规则：级联删除、里程碑自动进度（服务端唯一实现）
-  dev\                       本地用，不进任何发布产物
-    preview-server.mjs       node 静态服务器 + /functions/v1/app 转发到真实 handler
-    fake-supabase.mjs        内存版 Supabase 客户端（select/insert/update/delete/order/eq/gt/lt/in/limit/single）
-    seed.mjs                 演示数据：13 门课、若干待办、2 个项目、30 天健身
-  schema\
-    v1.sql                   7 张表 + 索引的受限 DDL（早写晚用）
-    v1.policies.json         7 张表的 accessPolicies（anonymous / select,insert,update,delete / public）
-```
-
-硬性边界：`dev/` 与 `schema/` 不得被 `webDirectory` 或 Function 包包含；`adapter.mjs` 不做任何修改；不在 `secretNames` 里声明数据库凭据（平台保留 `SUPABASE_*`）。
-
----
-
-## 三、阶段划分
-
-### S1 契约与骨架基线
-**依赖**：无
-**目标**：把 PRD 7.2/7.3 变成可执行文件，并让本地能起一个有界面的页面。
-
-新建：`schema/v1.sql`、`schema/v1.policies.json`、`web/styles.css`、`web/lib/dom.js`、`web/app.js`（仅路由与视图注册）
-
-关键实现
-- `v1.sql`：仅用受限子集（`uuid/text/integer/boolean/timestamptz/jsonb`；日期与时刻为 `text`；无外键、无默认值、无 CHECK；`CREATE INDEX` 不带排序与条件）
-- `app.js`：`routes` 表、`start()`、`navigate(hash)`、`renderShell()` 挂载 rail/tabbar/topbar、`keydown` 快捷键（`N`/`Esc`/`1`–`6`）
-- `dom.js`：`h(tag, props, ...children)`（自动转义、支持 `dataset`/`onclick`/`class` 数组）、`mount(el, node)`、`clear(el)`
-- `styles.css`：PRD 2.4 的全部 token（`--void/--panel/--line/--cyan/--orange/--green/--ink-dim`）、`.shell/.rail/.tabbar/.topbar/.view` 布局、640/1024 断点、`.panel/.chip/.badge/.progress` 基础元件、`.starfield` 星点背景（CSS 多重 radial-gradient，不用图片）
-
-**完成标准**
-1. `python -m http.server 4173 --bind 127.0.0.1 --directory web` 起来后 `curl http://127.0.0.1:4173/` 返回 200 且 HTML 含 `/app.js`
-2. 6 条哈希路由都能切换，顶栏与侧栏/底栏按断点正确出现其一
-3. `v1.sql` 逐条比对 PRD 7.2 字段无遗漏、无子集外语法
-
----
-
-### S2 Function 后端逻辑（本地真实代码 + 假数据库）
-**依赖**：S1（schema）
-**目标**：全部业务读写在本地跑通真实 handler 代码，不依赖云。
-
-新建：`functions/handler.mjs`、`functions/registry.mjs`、`functions/rules.mjs`、`functions/index.ts`、`dev/fake-supabase.mjs`、`dev/tests/s2.test.mjs`
-
-关键实现
-- `registry.mjs`：`export const TABLES = { courses: { columns: {name:{type:'text',max:60,required:true}, day_of_week:{type:'int',min:1,max:7}, start_time:{type:'hhmm'}, week_type:{type:'enum',values:['all','odd','even']}, ...}, readOnly:['id','created_at','updated_at'], orderBy:[...] }, ... }`；`validateRow(table, input, {partial})` 返回 `{ok, row, error}`
-- `handler.mjs`：`handleApp({request, supabase})` → 按 `?action=` 路由；`GET bootstrap`（7 表全量 + stats），`POST create/update/remove/import/wipe`；写操作校验 `method`、`content-type: application/json`、body ≤ 64KB；ID 与 `created_at/updated_at` 由 Function 用 `crypto.randomUUID()` 与 `new Date().toISOString()` 生成；DB 错误映射为固定码（`database_request_failed` / `invalid_input` / `not_found` / `write_result_unknown`），不回传原始报错
-- `rules.mjs`：服务端独有的完整性规则——删除项目级联删除其里程碑与子任务、删除里程碑级联删除子任务、子任务变化时重算未锁定的里程碑进度。
-  - 修订说明（S2 开工时）：原计划的 `stats.mjs` 取消。首页与健身的聚合口径若在前后端各写一遍必然漂移，因此统一由前端 `web/lib/time.js` 实现，`bootstrap` 只返回原始行与 `serverTime`；`dev/contract-check.mjs` 合并进 `dev/tests/s2.test.mjs`，同一检查不留两份。
-- `index.ts`：照平台示例结构，`Deno.serve(serveSite(handleApp, {createClient, env:(n)=>Deno.env.get(n)}))`，SDK 固定 `npm:@supabase/supabase-js@2.57.4`
-- `fake-supabase.mjs`：`from(table).select(cols).eq/in/gt/lt().order().limit().maybeSingle()/single()`、`insert/update/delete`，返回 `{data,error}`，行为对齐 PostgREST 语义（无匹配行 → `data:null`）
-
-**完成标准**
-1. `node --experimental-vm-modules --test dev/tests/s2.test.mjs` 全绿，至少覆盖：bootstrap 七表齐全；每表 create→read→update→read→delete→read 闭环；无匹配行的 update 返回 `not_found` 而非成功；`day_of_week=9`、`week_type='xyz'`、超长文本、缺 `name` 四种非法输入均返回 400 且不落库；GET 请求无法触发任何写动作（405）
-2. 请求体超 64KB 被拒；`content-type` 非 JSON 被拒
-3. `remove` 后 `bootstrap` 条数确实减少（证明删的是真实行）
-
----
-
-### S3 数据客户端与应用外壳
-**依赖**：S1、S2（契约）
-**目标**：页面通过 `/functions/v1/app` 拿真数据（本地由假库提供），乐观更新与三态齐备。
-
-新建：`web/lib/api.js`、`web/lib/store.js`、`web/lib/ui.js`、`web/lib/time.js`、`dev/preview-server.mjs`、`dev/seed.mjs`
-
-关键实现
-- `api.js`：`requestJson(url, init, messages)`（401/403 → "访问未授权"；非 JSON/重定向 → `invalid_response`；错误码映射中文）、`bootstrap()`、`createRow/updateRow/removeRow`、`isWriteOutcomeUnknown(e)`
-- `store.js`：`init()` 拉 bootstrap；`get(table)`、`subscribe(fn)`、`mutate(table, action, payload)`（快照→本地改→通知→写云→用返回行回填 / 失败回滚 + 错误态）；写完成后按 PRD 7.4 重新拉相关表；`document.visibilitychange` 与下拉刷新触发 `refresh()`；本地只存 UI 偏好（`localStorage` 键：`ui.rail`、`ui.timetableView`、`ui.homeCardOrder`）
-- `time.js`：`todayKey()`、`weekOf(date,cfg)`、`parityOfWeek`、`courseActiveOnWeek(c,week)`、`hm2min/min2hm`、`addDays`、`weekRangeOf(date,week)`、`mondayOf`、`groupByDate`、`overdueDays(task,today)`、`streakOf(workouts,today)`、`fmtRemain(ms)`
-- `ui.js`：`openLayer({title,fields,values,onSubmit})`（桌面 Modal / 移动底部抽屉，同一 API，`Esc` 与下拉关闭，失败保留输入、pending 期间禁重复提交）；`fields` 为声明式描述（`text/textarea/date/time/number/select/chips/switch`）；`toast(msg,{action,onAction})`（5 秒撤销）；`confirmDialog`；`skeleton(n)`；`emptyState({icon,title,cta})`；`errorState({message,onRetry})`；`swipeDelete(el,cb)`
-- `preview-server.mjs`：node 静态服务 `web/` + 把 `/functions/v1/app` 转给真实 `handleApp`（注入 `fake-supabase` 单例）+ 首次启动装载 `seed.mjs`
-
-**完成标准**
-1. `node dev/preview-server.mjs 4173` 后浏览器打开，6 个页面都渲染出 seed 数据，无 console 报错
-2. 手动断网（Ctrl+C 停服务）后点任何写操作：界面回滚到原值并显示可重试错误；恢复服务后重试成功
-3. 手机视口（DevTools 375px）下 `openLayer` 表现为底部抽屉且可下拉关闭
-4. 刷新页面后 `ui.*` 三项偏好保持，业务数据全部来自服务端
-
----
-
-### S4 设置页（学期与节次基准）
-**依赖**：S3
-**目标**：周次与课表坐标轴有真实来源。PRD 里首页和课表都依赖它，所以先做。
-
-新建：`web/views/settings.js`
-
-关键实现：`renderSettings(store)`、`semesterForm()`（起始日 + 总周数 + 实时显示"当前第 N 周"）、`periodEditor()`（增删行、`kind:'class'|'break'`、时间合法性校验：结束 > 开始、行之间不重叠）、`previewPeriodChange(before, after)` → 影响提示（"第 3 节将从 14:00 移到 15:00，影响 2 门课"）、`exportJson()`、`importJson(file)`、`wipeAll()`（需输入 `DELETE`）
-
-**完成标准**
-1. 改起始日为上周一，顶栏与首页周次读数 +1（验收 C16 前半）
-2. 节次表新增/删除一行，课表网格行数与刻度同步（课表未做时先在 console 断言 `cfg.periods.length`）
-3. 导出文件下载成功且为完整 7 表快照；导入回滚测试：清空 → 导入 → 条数与内容还原（C17 前半，Function 侧 `import/wipe` 在 S2 已实现）
-4. 时间倒置（结束早于开始）与行重叠时保存被阻止并给字段级错误
-
----
-
-### S5 日程模块
-**依赖**：S3（可与 S4 并行）
-**关键实现**：`renderTasks(store)`、`segments()`（今日/本周/全部/已完成）、`filterBar()`（分类 + 状态）、`groupedList()`（日期分组 + 吸顶标题 + 已完成沉底划线）、`taskForm()`、`toggleDone(task)`、`postponeMenu(task)`（今天/明天/下周）、`overdueBadge()`、`quickAddBar()`（弱解析：只识别 `X月X日`、`HH:MM`、`N分钟`，识别不了留空）
-**完成标准**
-1. 新增→编辑→勾选完成→取消完成→删除（左滑 + 5 秒撤销）全链路可用，刷新后状态保持
-2. 截止日设为昨天时显示"逾期 1 天"+ 橙色左边框，顺延后离开逾期组（C9）
-3. 无日期条目进入"收集箱"分组且不出现在今日列表
-4. 分类筛选与状态筛选组合结果正确；空列表显示空态引导
-
-### S6 课表模块
-**依赖**：S4（节次表）+ S3
-**关键实现**：`renderTimetable(store)`、`weekPicker()`（`‹ 第N周 ›` + 本周/单周/双周快捷 + 越界保护）、`viewSwitch()`（grid/day/list，存 `ui.timetableView`）、`gridWeek()`（纵轴由 `cfg.periods` 生成，`position:absolute` 按分钟映射高度；非本周课程 30% 透明度；当前时刻青色虚线只在今天列）、`gridDay()`、`listWeek()`、`emptySlotClick(date,time)` → 预填新建表单、`courseForm()`、`findConflicts(course, all)`（同星期 + 时间重叠 + 周型与周次范围有交集）、`courseDetail()`（只读 + 编辑/删除入口）
-**完成标准**
-1. 13 门课（含 2 门单周、2 门双周、1 门第 1–8 周）录入后，第 5 周与第 12 周显示结果与实际一致（C6、C4）
-2. 制造重叠课后保存出现橙色冲突警告并列出课名；强制保存后两课并排红描边（C7）
-3. 三视图切换、刷新保持；375px 默认日视图且无横向溢出
-4. 点击网格空白新建时星期与时间已预填正确
-
-### S7 科研模块
-**依赖**：S3
-**关键实现**：`renderResearchList(store)`、`renderResearchDetail(store, id)`（路由 `#/research/:id`）、`projectCard()`、`milestoneTimeline()`（纵向时间线 + 状态徽标 + 剩余天数）、`sortControl()`（桌面 HTML5 拖拽、移动端 ↑↓ 按钮，写 `sort`）、`progressControl(ms)`（自动 = 子任务完成比并锁定；解锁手填 + 「手动」徽标 + 差异提示）、`subtaskList()`（移动用手风琴展开）、`cascadeDeleteConfirm(ms)`（文案含"其下 N 个子任务"）
-**完成标准**
-1. PRD C10：4 条子任务勾掉 2 条 → 50%；解锁手调 80%；再勾 1 条仍为 80%
-2. C11：删除里程碑的确认框写明子任务数量，确认后级联消失
-3. C12：拖拽排序后刷新保持
-4. 状态四态颜色与 PRD 2.4 一致；首页"近期里程碑"取全项目最近 3 个未完成
-
-### S8 健身模块
-**依赖**：S3
-**关键实现**：`renderWorkout(store)`、`quickLogForm()`（默认今天、类型 chips 含自定义、时长快捷 15/30/45/60/90 + ±5 微调、三态完成度图标按钮）、`recordList()`（按周分组，未训练日显示为暗灰占位）、`statsPanel()`（本周/本月/自定义区间；`charts.progressRing` 目标完成、`charts.donut` 类型分布、`charts.barSeries` 近 8 周）、`heatGrid()`（近 3 个月）、`streak()`（缺练归零、部分不清零）
-**完成标准**
-1. C13：3 天训练 + 1 天缺练 → 连续天数归零；把缺练改为部分完成 → 连续不断
-2. C14：首页"本周健身"数字与本页统计逐项相等
-3. C15：从点「记一笔」到保存成功 ≤ 3 次点击
-4. 类型自定义后，下次表单 chips 中出现该项
-
-### S9 首页聚合
-**依赖**：S4、S5、S6、S7、S8
-**关键实现**：`renderHome(store)`、`hudBar()`（日期星期 + 第 N 周/共 M 周 + `charts.progressRing` 今日完成 + "下一站"倒计时）、`nextDueItem()`（最近未完成待办 → 退到最近未完成里程碑 → 都无则空文案）、`cardTodayCourses()`（时间序 + 当前时间指示线 + 已结束 40% 透明）、`cardTodayTasks()`（可勾选，唯一可在首页写入的动作）、`cardMilestones()`、`cardWorkouts()`、`cardOrder()`（长按拖拽，存本地）
-**完成标准**
-1. 四分区数字与明细页逐项一致（C14 + 手工比对课程与待办）
-2. 在首页勾选一条待办，日程页与另一台设备刷新后同步（C3 子集）
-3. 无课无待办的周末显示空态而非空白；1280px 与 375px 下卡片布局按 PRD 第 3 节
-4. 倒计时在跨天时自动更新（过 00:00 或页面重新可见时重算）
-
-### S10 全局打磨与无障碍
-**依赖**：S4–S9
-**关键实现**：统一的加载骨架、错误重试、空态文案（中文，无占位符残留）；`prefers-reduced-motion` 降级；键盘导航与焦点管理（打开浮层聚焦首字段、关闭还原焦点）；`aria-label` 补齐图标按钮；触控目标 ≥ 44px 复查；文档标题与描述；`index.html` 品牌文案与 PRD 一致
-**完成标准**
-1. C18：断网打开应用显示可读错误态 + 重试，无未捕获异常
-2. C19：清空数据后 6 个页面均为空态引导
-3. C2：375px 无横向滚动、无文字截断；Tab 键可完成一条待办的新建全流程
-
-### S11 云端初始化与建库（首次涉及云资源，需你授权）
-**依赖**：S1–S10（PRD 与平台都要求"先有可评审的真实前端，再建云"）
-步骤
-1. `get_local_context` 确认会话目录为 `D:\my_schedule`
-2. `prepare_site`：`webDirectory:'web'`、静态-only 引导草稿（不带 Function 与数据库参数）、新 `actionId` + 名称与子域名 → **保留返回的 Project/Site ID，不发布这个引导草稿、不展示其发布确认**
-3. `ensure_backend`：`database` + `functions` 能力 → 等待 Operation 完成
-4. `get_database` 读 `schema_version` 与 `schema_fingerprint`
-5. `create_database_migration`（SQL 用 `schema/v1.sql`、`accessPolicies` 用 `v1.policies.json`、两个新 UUID、上面读到的 version/fingerprint）→ 审阅返回的归一化 SQL 与策略
-6. `apply_database_migration`（带 revision/version/fingerprint/sqlSha256 + `confirm:true`）→ 轮询 Operation 至终态
-7. `get_database` + `list_database_tables` + `get_database_table` 复核 7 张表列与最终 `schema_version`，记下 `requiredSchemaVersion`
-**完成标准**：7 张表在云上存在且列与 PRD 7.2 完全一致；`schema_version` 已取到整数值；迁移为终态成功（不是 accepted/running）
-
-### S12 接真库 + 完整打包 + 访问控制
-**依赖**：S11
-步骤
-1. 前端仍打真实同源 `/functions/v1/app`；本地继续用 `preview-server` 跑回归，云上以真实请求验证
-2. `prepare_site`：`webDirectory:'web'`、`functionDirectory:'functions'`、`databaseAccess:'read_write'`、`requiredSchemaVersion` = S11 值、复用 `projectId`、**新 actionId**
-3. 等 Functions 就绪；`get_access_policy` 读 `available_modes` → 选非公开模式并 `update_access_policy`（该操作会同时挡住页面与 Function）→ 复核 `get_site`
-4. 部署后真实请求验一次读写闭环（`bootstrap` + 一条 create + 一条 delete）
-**完成标准**：`prepare_site` 产出 ready 草稿；Function 已就绪；访问策略为非公开模式且 `get_access_policy` 回读一致；云上真实读写出结果（这三件事分别记录，不互相推导）
-
-### S13 发布与验收（发布需你授权）
-**依赖**：S12
-步骤：`publish_site` → 轮询确认 `published` 与 active release → `show_publish_confirmation` 交付预览入口 → 手机与桌面同一网址跑 PRD 第 10 节 C1–C19
-**完成标准**：C1–C19 逐条记录"通过 / 未通过 / 未验证（并写明原因）"。静态预览不执行 Function，后端行为必须以已发布站点的真实请求为准，不得用预览或本地 fixture 充当通过证据。
-
----
-
-## 四、依赖关系
+**目录约定**：新代码全部落在 `v2/`，与旧云端 `web/ functions/ schema/` 物理隔离，互不引用。
 
 ```
-S1 ──► S2 ──► S3 ─┬─► S4 ─┬─► S6 ─┐
-                  │       │       │
-                  ├─► S5 ─┤       │
-                  ├─► S7 ─┼─► S9 ─┴─► S10 ─► S11 ─► S12 ─► S13
-                  └─► S8 ─┘
+v2/
+  index.html
+  styles.css
+  main.js                 # 入口：装载 config、启动 router
+  data/
+    semester.js           # 校历常量（周起算日、教学周区间、节次作息表）
+    courses.js            # 12 条课程常量数组
+  lib/
+    time.js               # 周次/节次/日期计算（纯函数）
+    store.js              # localStorage 读写 + 校验 + storage 事件订阅
+    dom.js                # h()、clear()、格式化等 DOM/文本小工具
+    router.js             # hash 路由
+    feedback.js           # toast（含撤销）、modal/drawer 浮层原语
+  views/
+    home.js
+    timetable.js
+    tasks.js
+  components/
+    taskForm.js           # 新建/编辑日程浮层表单（home/tasks 共用）
+    courseDetail.js       # 课程只读详情浮层
+    emptyState.js         # 空态/骨架/错误态占位组件
+  tests/
+    time.test.mjs
+    store.test.mjs
+    render.test.mjs       # 三视图渲染断言（DOM 桩）
+dev/
+  serve.mjs               # 零依赖静态服务器（新增，仅本地预览用）
 ```
-- 可并行：S5 / S7 / S8 三条互不依赖；S4 只阻塞 S6
-- 强串行：S2 必须在 S3 之前（契约先定）；S11 必须在 S12 之前（要 Site ID 与 schema 版本）；S13 必须最后
-- 跨阶段不变式：字段与动作只在 `registry.mjs` + `schema/v1.sql` 定义一次，前端表单不得出现库里没有的字段
 
-## 五、需要你在场的三个授权点
+---
 
-| 阶段 | 会产生的外部影响 |
-|---|---|
-| S11 步骤 2 | 创建云项目与站点（首次动用云资源） |
-| S11 步骤 3 | 启用数据库与 Functions 后端（平台资源） |
-| S13 | 发布到公网网址（对外可见，虽然已设非公开访问） |
+## S0 · 脚手架与本地预览
 
-其余阶段全部只改本机 `D:\my_schedule` 里的文件，不需要逐次确认。
+**依赖**：无（起点）
+**交付物**：一条命令能在浏览器打开空壳页面。
 
-## 六、风险与对策
+需创建文件：
+- `dev/serve.mjs` — 读 `process.argv[2]` 为端口，默认 `5173`；按扩展名返回 `v2/**` 的静态文件，正确设置 `Content-Type`（`.js`→`text/javascript`、`.css`→`text/css`）。仅用 `node:http`、`node:fs`、`node:path`。
+- `v2/index.html` — `<head>` 内 viewport/theme-color/link，`<body>` 内放置骨架容器：`#rail`（桌面顶导航）、`#topbar`、`#view`、`#tabbar`（手机底导航）、`#modal-root`、`#toast-root`，末尾 `<script type="module" src="./main.js">`。
+- `v2/main.js` — 暂只 `console.log('boot')` 并 import 后续会补的 router（先注释占位）。
+- `v2/styles.css` — 定义主题令牌 `:root{--bg:#070B14;--panel:#0E1524;--line:#1E2B45;--cyan:#3DD6F5;--orange:#FF8A3D;--green:#4ADE80;--mono:ui-monospace,...}`、`--bp:640px` 相关基础布局、等宽数字 `font-variant-numeric`。
 
-| 风险 | 对策 |
-|---|---|
-| 受限 DDL 与 PRD 字段冲突（不支持 FK/默认值/date 类型） | PRD 已按子集设计；S1 就把 `v1.sql` 拿去 `create_database_migration` 之前逐条自查，S11 一次通过 |
-| Function 本地无法跑 Deno，`index.ts` 只能部署后验证 | 把全部业务逻辑放 `.mjs`（node 可直跑），`index.ts` 只做 3 行装配，出错面收敛 |
-| 零构建 → 手写渲染层容易漏状态 | S3 就把 `skeleton/empty/error/optimistic` 做成唯一入口，各视图不许自行拼错误处理 |
-| 站点访问模式实际不支持"密码"只支持邀请制 | S12 读 `available_modes` 后再定；若为邮箱邀请白名单，效果强于密码，届时告知你 |
-| 移动端课表密度 | 已定三视图，小屏默认日视图；周视图横向可滚 |
-| 首次真实读写在云端失败但界面看起来正常 | S12 的完成标准要求以真实请求结果单独记账；S13 逐条 C 项标注证据来源 |
+**完成标准**：
+1. `"$NODE" dev/serve.mjs 5173`（后台运行）后浏览器访问 `http://localhost:5173/` 返回 index.html，控制台打印 `boot`，无 404、无 MIME 报错。
+2. `styles.css` 令牌可被引用（页面底色为 `#070B14`）。
+
+---
+
+## S1 · 数据层与时间计算（纯函数，无 UI）
+
+**依赖**：S0
+**交付物**：可被任意视图 import 的常量与纯函数，且通过单元测试。
+
+需创建文件与关键函数：
+
+`v2/data/semester.js`
+- `SEMESTER = { week1Monday: '2026-09-07', totalWeeks: 14 }`
+- `PERIODS`：14 项 `{ section, start:'08:00', end:'08:45' }`，值取自 PRD §5.1。
+
+`v2/data/courses.js`
+- `COURSES`：12 条 `{ day, startSection, endSection, name, room, color }`，逐字段照 PRD §5.2 表；`room` 为空的用 `null`。
+
+`v2/lib/time.js`（全部纯函数，入参显式传 `now:Date` 以便测试）
+- `weekOf(date): number|null` — 教学周 1–14，超区间返回 null。
+- `isTeachingWeek(date): boolean`
+- `weekdayOf(date): 1..7`（周一=1）
+- `periodRange(section): {start:Date,end:Date}`（给定日期+节次→起止时刻）
+- `coursesOn(date): Course[]` — 按 `day` 过滤，`startSection` 升序；非教学周返回 `[]`。
+- `nextCourse(date): {course, at:Date}|null` — 今日中第一节 `end > now` 的课。
+- `currentCourse(date): Course|null` — `start<=now<end` 的课。
+- `fmtClock(date): 'HH:MM'`、`fmtCountdown(ms): 'HH:MM:SS'`、`fmtDateCN(date): '9月20日 周日'`、`weekLabel(date): '第2周'`
+- `dayKey(date): 'YYYY-MM-DD'`、`addDays(date,n): Date`、`diffDays(a,b): number`
+
+`v2/lib/store.js`
+- `loadTasks(): Task[]` — 解析 `localStorage['schedule.tasks.v1']`；JSON 非法时抛 `StoreError`（供 S6 错误态捕获）。
+- `saveTasks(tasks): void`
+- `newTaskId(): string`
+- `upsertTask(task): Task[]` / `removeTask(id): Task[]` / `toggleTask(id): Task[]`
+- `validateTask(draft): {ok, errors}` — 标题必填、日期必填、起止时间成对（有始必有终且 start<=end）。
+- `subscribe(cb): ()=void` — 监听 `window` 的 `storage` 事件（供多标签页同步）。
+- `resetStore(): void` — 清空并写入 `[]`。
+
+`v2/lib/dom.js`
+- `h(tag, props, ...children)`、`clear(el)`、`mount(el, node)`、`qs(sel)`。
+
+需创建测试：`v2/tests/time.test.mjs`、`v2/tests/store.test.mjs`
+- time：覆盖 `weekOf` 边界（9/6→null、9/7→1、9/13→1、9/14→2、12/28→null）、`coursesOn` 对周一/周四/无课日的结果、`nextCourse/currentCourse` 用固定 `now` 断言。
+- store：`validateTask` 各非法分支；`upsert/remove/toggle` 往返；`loadTasks` 遇坏 JSON 抛错。
+
+**完成标准**：
+1. `"$NODE" --test v2/tests/*.test.mjs` 全绿。
+2. `COURSES.length === 12` 且逐条与 PRD §5.2 一致（对应验收 3）。
+3. 无任何 DOM 依赖，可在 Node 直接 import。
+
+---
+
+## S2 · 外壳：路由 + 导航 + 主题布局
+
+**依赖**：S0（样式）、S1（`time.js` 供顶栏周次展示）
+**交付物**：三页可切换、导航随断点变形、顶栏显示日期+周次。
+
+需创建/补全文件：
+- `v2/lib/router.js` — `routes` 表 `{ '#/':home, '#/timetable':timetable, '#/tasks':tasks }`；`start()` 监听 `hashchange`，渲染到 `#view`，未知 hash 回落 `#/`；导出 `navigate(hash)`（供首页跳转日程页定位）。
+- `v2/lib/feedback.js` — `openOverlay({title, body, mode})`：桌面居中 Modal(480px)、手机底部抽屉；`Esc`/遮罩关闭；`closeOverlay()`。`toast(message, {actionLabel, onAction, duration=5000})`。
+- `v2/components/emptyState.js` — `renderEmpty({icon, text, actionText, onAction})`、`renderSkeleton()`、`renderError({onRetry})`。
+- 补 `v2/main.js` — import config，调用 `router.start()`，渲染 `#rail`/`#tabbar` 导航（3 Tab：首页/课表/日程），顶栏 `#topbar` 用 `time.fmtDateCN + weekLabel`。
+- 补 `v2/styles.css` — 底 Tab（`<640px` 固定底部、`≥640px` 隐藏）与顶 Tab（`≥640px` 水平、`<640px` 隐藏）互斥显示；内容区 `max-width:960px; margin:auto`；overlay/toast/empty/skeleton 样式。
+- 三个 `views/*.js` 先返回占位标题（S3–S5 再实现），保证路由跑通。
+
+**完成标准**：
+1. 点导航/改 hash 能在三占位页间切换，当前 Tab 高亮。
+2. 顶栏显示 `2026-09-20 周日 · 第2周` 格式（用系统当天）。
+3. `375px` 见底部 3 Tab、无顶 Tab；`1280px` 反之。两档均无横向滚动条。
+4. `Esc` 与遮罩点击能关闭一个测试浮层。
+
+---
+
+## S3 · 课表模块（只读）
+
+**依赖**：S1（courses/time）、S2（router/overlay）
+**交付物**：桌面周网格 + 手机单日轴双布局 + 只读详情浮层 + now 线。对应 PRD §5.4、验收 7/8/9。
+
+需创建/实现文件：
+- `v2/views/timetable.js` — `render(state)`：
+  - 顶部周次徽标 + 星期胶囊选择器（手机显示，默认选中今天，`←/→` 或横滑切日；桌面隐藏选择器直接铺整周）。
+  - 分支：`matchMedia('(min-width:640px)')` → 网格；否则单日轴。
+  - 非教学周：顶部横幅「本周无教学安排（第 X 周）」（对应验收 5）。
+  - now 线：教学周内按当前时刻定位红色横线，`setInterval` 每分钟刷新（页面 `visibilitychange` 时暂停）。
+- `v2/components/courseDetail.js` — `open(course)`：用 `feedback.openOverlay` 展示星期/节次+具体时间/地点/「本学期 1–14 周」；**无任何编辑按钮**（验收 9）。
+- 样式：网格 `grid-template-columns: 时间轴 + 7 列`，课程块按 `startSection..endSection` 跨行；单日轴按节次定位色块。
+
+**完成标准**：
+1. 桌面 1280px：周一 1-2 节「法国歌剧史与作品赏析」跨两行；周四 11-12 节「综合法语(1)」出现（验收 7）。
+2. 手机 375px：默认停今天；切到周二可见 3-5 节「大学计算机基础」跨三行（验收 8）。
+3. 点课程块弹只读详情，含四要素且无编辑入口（验收 9）。
+4. 教学周外的日期：显示无教学横幅，不渲染课程块。
+5. browser-use 在 375 与 1280 各截图一次存档核对。
+
+---
+
+## S4 · 日程模块（增删改查）
+
+**依赖**：S1（store/time）、S2（router/overlay/toast）
+**交付物**：分组列表 + 三态筛选 + 新建/编辑浮层表单 + 删除撤销。对应 PRD §5.3、§5.5、验收 10–15。
+
+需创建/实现文件：
+- `v2/components/taskForm.js` — `openCreate(onSaved)` / `openEdit(task, onSaved)`：字段 标题*、日期*、开始、结束、地点、备注；失焦即 `store.validateTask` 校验，非法禁用提交；起止成对校验（验收 10、11）。保存调 `store.upsertTask`。
+- `v2/views/tasks.js` — `render(state)`：
+  - 段控件 全部/未完成/已完成（默认全部）。
+  - 分组：逾期 → 今天 → 明天 → 本周内 → 未来（用 `time.diffDays`）；逾期橙条、今日/临近青条（验收 12）。
+  - 行：圆圈勾选（`store.toggleTask`，原地不弹层）｜标题+元信息（时间·地点）｜状态点；已完成置灰划线沉组底（验收 14）。
+  - 编辑：点行 → `taskForm.openEdit`；手机左滑露删除。
+  - 删除：`store.removeTask` + `feedback.toast('已删除…', {actionLabel:'撤销', onAction:恢复})`（验收 13）。
+  - 右下悬浮「＋」→ `taskForm.openCreate`；空态用 `emptyState.renderEmpty`，点按钮直开新建（验收 15）。
+  - 支持从首页跳转带参定位并高亮某条（读 `router` 传入的 `focusId`）。
+- 样式：段控件、分组头、竖条、FAB、左滑。
+
+**完成标准**：
+1. 验收 10–15 逐条通过。
+2. 刷新页面数据仍在（`localStorage` 持久，验收 1 的日程部分）。
+3. 表单校验失败时提交按钮 `disabled`，通过后才写入。
+4. render 单测：给定 4 条任务，分组顺序与高亮类名正确。
+
+---
+
+## S5 · 首页模块（今日总览）
+
+**依赖**：S1（courses/time/store）、S2（overlay）、S4（`taskForm` 复用新建浮层）
+**交付物**：五区块 + 置灰/进行中/高亮 + 秒级倒计时。对应 PRD §3、验收 4/6。
+
+需实现文件：
+- `v2/views/home.js` — `render(state)` 五区块（PRD §3）：
+  1. 顶栏日期+周次（S2 已渲染，此处补月历入口按钮，点开只读迷你月历，标记有课/有日程日）。
+  2. 下一节 Hero：`time.nextCourse` + `fmtCountdown`，`setInterval` 每秒；无课/已结束文案切换（验收 4、6）。
+  3. 今日课程时间轴：`time.coursesOn` + `currentCourse` 标「进行中」青框，已过置灰。
+  4. 今日日程：`store.loadTasks` 过滤 `date==今天`，未完成置顶，点圆圈 `toggleTask`。
+  5. 临近日程：`明天≤date≤今天+3` 且未完成，按日期分组橙标签。
+  - 交互：点今日日程 → `router.navigate('#/tasks')` 并传 `focusId` 定位；「＋」复用 `taskForm.openCreate`。
+- 样式：Hero 卡、时间轴、徽标。
+
+**完成标准**：
+1. 工作日上午 9:00（可注入 `now` 测）：第二节前置灰、无「进行中」误标、Hero 指向 09:50 课且倒计时跳动（验收 6）。
+2. 第 2 周周日：周次「第2周」，无课则 Hero「今日无课」（验收 4）。
+3. 首页日程写操作仅"勾选完成"，不新增编辑入口（PRD §6）。
+4. 与日程页读同一 `localStorage`，改一处另一处刷新可见。
+
+---
+
+## S6 · 横切健壮性（空态/骨架/错误/跨零点/多标签页）
+
+**依赖**：S3、S4、S5（三页已成形）
+**交付物**：PRD §2 全局约定与 §7 第 6/7 条、验收 16/17 落地。
+
+需实现：
+- 错误态：`store.loadTasks` 抛 `StoreError` 时，home/tasks 捕获并渲染 `emptyState.renderError({onRetry: 一键 resetStore})`，不白屏（验收 17）。
+- 骨架屏：视图切换首帧 `renderSkeleton()`，数据就绪替换（无网络，主要防闪烁/为后续留口）。
+- 空态：三页无数据时的引导（课表非教学周、日程空、首页无课无日程）。
+- 多标签页同步：`main.js` 调 `store.subscribe`，收到变更事件后重渲染当前视图（验收 16）。
+- 跨零点：`document.visibilitychange`→可见时若 `dayKey(now)` 变化，重算并刷新分组/周次（PRD §7.2）。
+- 断网可用：确认全程无 `fetch`（构建期 grep 校验）。
+
+**完成标准**：
+1. 验收 16：两标签页 A 新建、B 不刷新即见。
+2. 验收 17：手工写坏 `schedule.tasks.v1` → 错误态 + 一键重置，无白屏。
+3. 三页空态文案与引导按钮齐全。
+4. 源码 `grep -R "fetch(" v2/` 无结果（断网可用证据）。
+
+---
+
+## S7 · 响应式打磨 · 浏览器验证 · 发布
+
+**依赖**：S0–S6 全部完成
+**交付物**：通过 PRD §9 全部 18 条验收，并发布到现有站点。
+
+需做：
+- 全量单测：`"$NODE" --test v2/tests/*.test.mjs` 全绿。
+- 四档宽度（360/640/1024/1440）browser-use 截图，逐条走查验收 18：无横向滚动、Tab 不重叠、Modal 不超屏。
+- 逐条勾验 PRD §9 的 1–18，记录结果到本文件末尾「验收记录」。
+- 发布：用 sites-hosting 流程把 `v2/` 作为站点产物发布到现有站点（`projectId 01a0bc64-...1948`）；发布前需用户确认。
+- 手机真机/移动仿真访问线上 URL 复验导航、课表双布局、日程持久。
+
+**完成标准**：
+1. PRD §9 十八条全部标注"通过"。
+2. 线上站点访问正常，改动经刷新后 `localStorage` 数据保留。
+3. 交付说明：更新本文件验收记录 + 简述已知限制（日程不跨设备）。
+
+---
+
+## 阶段依赖图
+
+```
+S0 ──┬── S1 ──┬── S3 ──┐
+     │        │        │
+     └── S2 ──┤        ├── S5 ──┐
+             └── S4 ──┘         ├── S6 ── S7
+                  └──────────────┘
+```
+
+文字版：
+- S0 → 一切前提。
+- S1、S2 可在 S0 后并行。
+- S3 需 S1+S2；S4 需 S1+S2。
+- S5 需 S1+S2+S4（复用 `taskForm`）。
+- S6 需 S3+S4+S5。
+- S7 需 S0–S6 全通过；**发布动作前必须取得用户确认**。
+
+## 里程碑与顺序建议
+
+| 里程碑 | 含阶段 | 可演示结果 |
+|---|---|---|
+| M1 骨架可跑 | S0–S2 | 三页导航切换 + 顶栏周次 |
+| M2 只读课表 | S3 | 双布局课表 + 详情浮层 |
+| M3 可写日程 | S4 | 日程 CRUD + 撤销 |
+| M4 首页聚合 | S5 | 今日总览 + 倒计时 |
+| M5 健壮收口 | S6 | 错误/空态/多标签页 |
+| M6 上线 | S7 | 站点发布 + 验收全绿 |
+
+> 每个里程碑结束都停下来给你验收，通过再进下一阶段；未经你确认不写下一阶段的代码、不发布。
+
+---
+
+## 验收记录（2026-09-20，S7 收口）
+
+### A. 单元测试：56 / 56 全绿
+
+```
+"$NODE" --test "v2/tests/*.test.mjs"
+```
+
+| 文件 | 阶段 | 条数 |
+|---|---|---|
+| `store.test.mjs` | S1/S4 | 6 |
+| `time.test.mjs` | S1 | 8 |
+| `shell.test.mjs` | S2 | 7 |
+| `timetable.test.mjs` | S3 | 9 |
+| `tasks.test.mjs` | S4 | 9 |
+| `home.test.mjs` | S5 | 9 |
+| `robustness.test.mjs` | S6 | 8 |
+
+### B. PRD §9 十八条：真实浏览器逐项走查，18 / 18 通过
+
+脚本 `.measure/acceptance.mjs`（零依赖 CDP，驱动 headless Edge，只操作自建的 target），`exit=0`。
+
+| # | 验收项 | 实测证据 |
+|---|---|---|
+| 1 | 新建 3 条，关标签页重开仍在且状态不变 | 新建浮层写入 3 条；新标签页打开后标题、勾选状态、列表条数一致 |
+| 2 | 换浏览器/设备看不到同一份日程（声明的边界） | 各模块零网络调用，数据只落本机 localStorage |
+| 3 | 课表常量 12 条且字段与 PRD 5.2 一致 | day/节次/名称/地点逐字段相同，两节无地点为 null |
+| 4 | 真实今天 2026-09-20（第 2 周周日） | 顶栏「9月20日 周日 · 第2周▦」+ Hero「今日无课」 |
+| 5 | 2026-12-28 超 14 周 | Hero「假期中 · 今日无课」，课表横幅「本周无教学安排（第17周）」，课程块 0 |
+| 6 | 工作日上午课间 09:40 | 1-2 连堂（至 09:35）置灰、其余未开始、无「进行中」；下一节 09:50 倒计时 `00:10:00 → 00:09:57` 逐秒跳动 |
+| 7 | 桌面 1280 课表网格 | 7 列；法国歌剧史 col2 row2/span2；综合法语(1) col5 row12/span2 |
+| 8 | 手机 375 课表 | 默认停在今天胶囊；切周二 3 块，大学计算机基础 `grid-row:4 / span 3` |
+| 9 | 点课程块 → 只读详情 | 含星期/节次/时间/地点，仅关闭入口，无编辑按钮 |
+| 10 | 标题留空 | 刚打开禁用 → 合法启用 → 清空失焦报「标题不能为空」并重新禁用 |
+| 11 | 只填开始时间 | 提交禁用 + 提示「开始与结束时间需成对填写」，未写入存储 |
+| 12 | 逾期/今天分组配色 | 组序「逾期 (1) / 今天 · 9月20日 周日 (1)」；逾期橙条、今天青条 |
+| 13 | 删除撤销窗口 | 5 秒内点「撤销」恢复；超时后列表与存储均无残留、toast 自动收起 |
+| 14 | 完成项表现 | 划线（line-through）置灰沉底；切「未完成」只剩另一条 |
+| 15 | 空态引导 | 「还没有日程，点右下角记一笔」→ 直接打开「新建日程」浮层 |
+| 16 | 双标签页同步 | A 页写入后 B 页未刷新即渲染（storage 事件驱动） |
+| 17 | 非法 JSON | 错误态「本地日程数据损坏，无法读取」→ 一键重置回到空态，不白屏 |
+| 18 | 四档宽度不破版 | 见 C 表；导航在 640 断点切换，Tab 无重叠，Modal 不超屏 |
+
+### C. 响应式量测：4 档宽度 × 5 种状态
+
+脚本 `.measure/responsive.mjs`（CDP `Emulation.setDeviceMetricsOverride` 精确设定 CSS 宽度，驱动真实 `index.html`），`exit=0`。
+
+| 视口 | 状态 | scrollW−clientW（横向溢出） | 导航形态 | 浮层 |
+|---|---|---|---|---|
+| 360 | 首页 / 月历 / 课表 / 日程 / 新建 | 0 | 底部 Tab | 月历 360px@0（满宽抽屉）、新建 360px@0 |
+| 640 | 同上 5 态 | 0 | 左侧栏 | Modal 480px@80（居中） |
+| 1024 | 同上 5 态 | 0 | 左侧栏 | Modal 480px@272 |
+| 1440 | 同上 5 态 | 0 | 左侧栏 | Modal 480px@480 |
+
+说明：课表页在 640/1024 下 `innerWidth` 比 `clientWidth` 大 15px，是纵向滚动条占位（12 节次高度超屏），`scrollWidth == clientWidth` 即无横向溢出，属正常。
+
+### D. 已知限制（与 PRD 一致，非缺陷）
+
+1. 日程数据只存在本机浏览器 `localStorage`（key `schedule.tasks.v1`），换浏览器/设备/清缓存即不同步 —— PRD §8 明确第一版不做云同步。
+2. 课表为内置常量（12 条），改课需改 `v2/data/courses.js` 并发版，第一版不提供编辑入口（PRD §4/§8）。
+3. 不做提醒推送、不做冲突检测、不做多账号（PRD §8）。
+
+### E. 发布状态
+
+**未发布。** 本地开发服务器（`dev/serve.mjs`，端口 5173）验证通过；按 DEV_PLAN.md 与你的要求，发布到站点前需你明确确认。
+
+---
+
+## 功能验收走查（2026-09-20 第二轮，独立于上面 18 条）
+
+第一轮（上面 A/B/C）验的是「PRD 写了什么，代码做到没有」。这一轮换一个立场重做：假设 PRD 本身可能有洞，逐条对照 PRD §2–§7 在真实浏览器里量测，并专门去戳 PRD **没写**的地方（断网、存储写满、XSS、超长文本、手势边界、跨月、焦点、动画叠放）。
+
+脚本：`.measure/audit.mjs`（32 项，CDP 驱动真实 `index.html`，桌面 1280×900 + 手机 375×740 双标签页），耗时约 72 秒。
+
+### 结论摘要
+
+| 严重度 | 数量 | 条目 |
+|---|---|---|
+| 阻塞性 | 0 | —— 三页可用、数据不丢、不白屏、不破版 |
+| 功能性 | 2 | F-1 断网重载不可用；F-2 存储写满时静默失败 |
+| 体验性 | 4 | E-1 月历不能翻月；E-2 备注不可见；E-3 首页子块空态太弱；E-4 空态文案与按钮重复 |
+| 文档与实现不一致 | 4 | D-1 桌面导航形态；D-2 主题色值；D-3 PRD§9.6 时点自相矛盾；D-4 筛选态跨页保持未定义 |
+
+### 功能性
+
+**F-1 · 断网后刷新/重开就打不开（PRD §7.6「断网可完整使用」不成立）**
+CDP 切离线 + `Page.reload(ignoreCache)` → 直接落到浏览器错误页（`#view` 不存在，title 变 `localhost`），`navigator.serviceWorker.controller = null`。
+已在屏内的标签页断网仍可正常读写（数据在 localStorage），所以"用到一半断网"没事，但"断网时重新打开"不行。
+两条路：① 加一个只预缓存 7 个静态文件 Service Worker（仍然零后端、零接口，不改 PRD 边界）；② 把 PRD §7.6 改成「已加载页面断网仍可用；重新打开需网络」。
+
+**F-2 · localStorage 写满 / 无痕模式：保存静默失败**
+把 `setItem` 打成抛 `QuotaExceededError` 后点保存：捕获到未处理异常 `Uncaught QuotaExceededError`，浮层停在原地、没有 toast、列表没变——用户视角是"点了保存没反应"。
+PRD §5.3 只定义"数据存哪"，没定义"存不下怎么办"。建议在 `saveTasks` 外面包一层 try/catch，失败时 toast「本机存储空间不足或已被禁用，未保存」。（注意别复用它现在的错误态：写失败≠数据损坏。）
+
+### 体验性
+
+- **E-1 迷你月历只有当前月**，无左右翻月按钮（面板内按钮只有 `✕`）。10 月的日程在 9 月的月历上没有任何提示地不存在；课程标记本身正确（9 月 18 个工作日均标「有课」，日程 2 天标「有日程」，今日格为 2026-09-20）。
+- **E-2 备注（note）存了但看不见**：列表行文本只有「带备注」，既不明示也没有「有备注」角标，只有进编辑浮层才能看到——容易让人以为没保存成功。
+- **E-3 首页「今日日程」空态是一行裸文字**「今天没有日程」，没有图标/按钮；PRD §2.3.3 要求每页空态含「图标+引导语+主按钮」。日程页合规（`◇` + 引导语 + 按钮）。
+- **E-4 日程页空态文案与按钮重复**：`还没有日程，点右下角记一笔` + 按钮 `记一笔`，读起来是"…记一笔 〔记一笔〕"，且文案指"点右下角"而按钮就在眼前。
+
+### 文档与实现不一致（需要你裁决：改 PRD 还是改代码）
+
+- **D-1** PRD §2 与 §7.1 写"桌面（≥640px）顶部水平 Tab"，实现是 **208px 左侧栏**（顶栏内 0 个 Tab，底部 Tab `display:none`）。内容区 `max-width: 960px` 居中 ✓。
+- **D-2** PRD §2 的六个 hex（`#070B14/#0E1524/#1E2B45/#3DD6F5/#FF8A3D/#4ADE80`）在 `v2/styles.css` 里 **一个都没有**；实际是你后来定的低饱和液态玻璃 token（`--base #07080f`、`--accent #86c9de`、`--warn #e0a97c`、`--ok #9bd0a6`，描边用半透明白）。→ 应把 PRD §2 视觉段改写成"以 `styles.css` 顶部 token + `design.test.mjs` 契约为准"。
+- **D-3** PRD §9.6 说"09:00 打开首页：第二节之前的课全部置灰……下一节卡指向 09:50"。按 §5.1 作息，09:00 正处第 2 节（08:50-09:35）内，而 1-2 连堂 = 08:00-09:35 还在上，所以置灰它等于说谎。实现选择：大标题=09:50 的课 + 倒计时 `还有 00:50:00`（满足"指向 09:50"），同时 kicker 显示"进行中：法国歌剧史…"。行为合理，PRD 措辞需要澄清（建议把时点改成 09:40，或明确"连堂按整块判定"）。
+- **D-4** 筛选（全部/未完成/已完成）是模块级状态，离开页面再回来仍保持。PRD 未定义，行为本身可接受，记为待确认。
+
+### 这一轮新验证为"没问题"的部分（第一轮没覆盖）
+
+- 控制台与请求全程干净：桌面+手机各 3 页、月历/新建/课程详情浮层、未知路由 `#/nope`，0 条 error/warning/failed request。
+- XSS：标题写 `<img src=x onerror=...>` 按纯文本渲染，未执行、未插入节点。
+- 375px 下 100 字无空格长标题：页面与条目内部均无横向溢出（row clientW == scrollW == 339）。
+- 表单校验补漏：结束早于开始 → 「结束时间不能早于开始时间」且禁用提交；只填结束时间同样拦截。
+- 手势：手机抽屉下拉 >80px 关闭 ✓；单日轴右滑 120px 日→六、左滑切回 ✓（≤40px 不响应）；列表左滑删除阈值 60px 生效（30px 不误删）。
+- 焦点：浮层 Esc 关闭后焦点回到 `.fab`。
+- Toast 叠放：连续删两条，两个 toast 在流内不重叠、均在屏内（容器底 876/900），各自带撤销按钮；此前一次读到"超出视口 2px"是**后台标签页 CSS 动画被节流**造成的瞬时帧，落位后正常。
+- 表格数字：`.hm-course-time`/Hero 倒计时 `font-variant-numeric: tabular-nums`，首字体 `ui-monospace`。
+- 课程详情：无地点的「体育(1)」显示 `地点 未指定`，字段齐全（星期/节次/时间/周期），面板内仅 `✕`。
