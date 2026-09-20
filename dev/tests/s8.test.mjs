@@ -76,15 +76,37 @@ test('S8 区间统计逐项：次数/时长/三态/活跃天数/类型分布', (
     [['跑步', 150, 2], ['力量', 90, 2], ['骑行', 0, 1]], '类型分布按时长优先，再按次数');
 });
 
+test('S8 缺练不计时长：头部总时长、周分组、柱状图用的是同一个口径', () => {
+  // 契约已不允许缺练带时长入库，但读数口径不能靠上游保证来对齐：
+  // 一条缺练带着分钟数时，页面三处必须同时不认它，否则就出现"总时长 215 / 分组 185"
+  const rows = [
+    row(0, { type: '力量', duration_min: 50 }),
+    row(1, { type: '力量', duration_min: 30, status: 'partial' }),
+    row(2, { type: '跑步', duration_min: 40, status: 'missed' }),
+    row(3, { type: '骑行', duration_min: 25, status: 'missed' }),
+  ];
+  const range = { start: day(30), end: TODAY };
+  const stats = T.workoutStats(rows, range);
+  assert.equal(stats.minutes, 80, '缺练那两笔的 65 分钟不该进总时长');
+  assert.equal(stats.sessions, 4, '缺练仍是一条记录，次数照算');
+  assert.equal(stats.activeDays, 2, '缺练那天不算有练');
+  assert.deepEqual(stats.byType.map((item) => [item.type, item.minutes]),
+    [['力量', 80], ['跑步', 0], ['骑行', 0]], '类型分布的分钟数也要排除缺练，不然环形图与总时长又对不上');
+  const buckets = T.weeklyBuckets(rows, { count: 8, today: TODAY });
+  assert.equal(buckets.reduce((sum, item) => sum + item.minutes, 0), stats.minutes, '近 8 周柱状之和要等于头部总时长');
+  const groups = T.weekGroups(rows, { today: TODAY, weeks: 4 });
+  const grouped = groups.reduce((sum, group) => sum + group.days.flatMap((cell) => cell.rows)
+    .reduce((part, item) => part + (item.status === 'missed' ? 0 : Number(item.duration_min) || 0), 0), 0);
+  assert.equal(grouped, stats.minutes, '按周分组的分标题时长要与总时长同一口径');
+});
+
 test('S8 本周口径两处一致：柱状最后一根 = 本周时长统计（C14 的前提）', () => {
   const week = T.currentWeekRange(SEED.semester_config[0], TODAY);
   const stats = T.workoutStats(SEED.workouts, week);
   const buckets = T.weeklyBuckets(SEED.workouts, { count: 8, today: TODAY });
   assert.equal(buckets.length, 8);
   assert.equal(buckets.at(-1).start, week.start, '最后一根柱子就是本周');
-  assert.equal(buckets.at(-1).minutes, stats.minutes - SEED.workouts
-    .filter((item) => item.workout_date >= week.start && item.workout_date <= week.end && item.status === 'missed')
-    .reduce((sum, item) => sum + (Number(item.duration_min) || 0), 0), '柱状要排除缺练时长');
+  assert.equal(buckets.at(-1).minutes, stats.minutes, '同一页的两个时长读数不该再需要"减去缺练"这种修正项');
   assert.equal(buckets.at(-1).label, T.fmtDateShort(week.start));
   assert.equal(buckets[0].start, T.addDays(week.start, -49));
 });

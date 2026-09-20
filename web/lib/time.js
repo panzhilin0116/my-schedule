@@ -553,13 +553,15 @@ export function workoutStats(workouts, range) {
   const stats = { sessions: rows.length, minutes: 0, done: 0, partial: 0, missed: 0, byType: [], days: new Set() };
   const types = new Map();
   for (const row of rows) {
-    stats.minutes += Number(row.duration_min) || 0;
+    // 缺练只是时间线上的占位：这里如果不排除，头部总时长就会比周分组和柱状图各算一套
+    const minutes = row.status === 'missed' ? 0 : Number(row.duration_min) || 0;
+    stats.minutes += minutes;
     if (row.status in stats) stats[row.status] += 1;
     if (row.status !== 'missed') stats.days.add(row.workout_date);
     const key = row.type || '其它';
     const entry = types.get(key) ?? { type: key, sessions: 0, minutes: 0 };
     entry.sessions += 1;
-    entry.minutes += Number(row.duration_min) || 0;
+    entry.minutes += minutes;
     types.set(key, entry);
   }
   stats.byType = [...types.values()].sort((a, b) => b.minutes - a.minutes || b.sessions - a.sessions);
