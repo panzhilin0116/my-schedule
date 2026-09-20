@@ -57,9 +57,9 @@ test('S10 键盘可见焦点：:focus-visible 给了轮廓，且只在键盘路�
   assert.equal(/button:focus\s*\{\s*outline/.test(css), false, '不该再用裸 :focus 给按钮画框');
 });
 
-test('S10 窄屏不横向溢出：多列栅格一律 minmax(0,…) 或自适应，不留裸 1fr 轨道', async () => {
-  const templates = [...css.matchAll(/grid-template-columns:([^;]+);/g)].map((match) => match[1].trim());
-  assert.ok(templates.length >= 8, `只抓到 ${templates.length} 条栅格定义，断言等于空转`);
+test('S10 窄屏不横向溢出：栅格轨道一律 minmax(0,…) 或自适应，不留裸 1fr', async () => {
+  const declared = [...css.matchAll(/grid-template-columns:([^;]+);/g)].map((match) => match[1].trim());
+  assert.ok(declared.length >= 8, `只抓到 ${declared.length} 条栅格定义，断言等于空转`);
   const tracks = (value) => {
     const out = [];
     let depth = 0;
@@ -72,11 +72,28 @@ test('S10 窄屏不横向溢出：多列栅格一律 minmax(0,…) 或自适应�
     out.push(current.trim());
     return out.filter(Boolean);
   };
-  for (const value of templates) {
-    if (/^\s*1fr\s*$/.test(value) || /auto-fit|auto-fill/.test(value)) continue;
-    const bad = tracks(value).filter((track) => /^\d*\.?\d+fr$/.test(track));
+  const bareFr = (value) => tracks(value.replace(/\s*!important\s*/i, ''))
+    .filter((track) => /^\d*\.?\d*fr$/.test(track));
+  for (const value of declared) {
+    if (/auto-fit|auto-fill/.test(value)) continue;
+    const bad = bareFr(value);
     assert.deepEqual(bad, [], `栅格轨道 ${value} 用的是裸 ${bad[0]}：min-content 会把它顶宽，375px 下就出横向滚动`);
   }
+  // 溢出恰恰是响应式覆盖引入的：桌面写了 minmax(0,1fr)，窄屏改回裸 1fr 等于把保护摘掉，
+  // 而单轨道 `1fr` 就是 minmax(auto,1fr)，nowrap 的一行描述能把整条轨道顶到 500 多像素
+  const media = [...css.matchAll(/@media[^{]+\{([\s\S]*?)\n\}/g)].map((match) => match[1]);
+  assert.ok(media.length >= 2, '没抓到响应式区块，断言等于空转');
+  let checked = 0;
+  for (const block of media) {
+    for (const rule of block.matchAll(/([^\n{}]+)\{[^}]*grid-template-columns:([^;]+);/g)) {
+      checked += 1;
+      const value = rule[2].trim();
+      if (/auto-fit|auto-fill/.test(value)) continue;
+      assert.equal(bareFr(value).length, 0,
+        `窄屏规则 ${rule[1].trim()} 的 grid-template-columns: ${value} 没有 minmax(0,…)，单轨道也会被内容顶宽`);
+    }
+  }
+  assert.ok(checked >= 4, `窄屏栅格覆盖只查到 ${checked} 条，断言等于空转`);
   // 左滑删除的按钮平时不占位，否则每行都溢出
   assert.match(css, /\.list-delete\s*\{[^}]*display:\s*none/);
   assert.match(css, /\.truncate\s*\{[^}]*min-width:\s*0/);

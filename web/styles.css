@@ -707,11 +707,12 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(.8) sepia
   .rail { display: none; }
   .tabbar { display: flex; }
   .view { padding-bottom: calc(var(--tabbar-h) + 26px + env(safe-area-inset-bottom)); }
-  .home-grid { grid-template-columns: 1fr; }
-  .grid.cols-2, .grid.cols-3 { grid-template-columns: 1fr; }
-  .hud { grid-template-columns: 1fr; gap: 12px; }
+  /* 窄屏单轨道也要 minmax(0,…)：裸 1fr 等于 minmax(auto,1fr)，
+     卡片里 nowrap 的一行就能把轨道顶宽，整页出横向滚动 */
+  .home-grid { grid-template-columns: minmax(0, 1fr); }
+  .grid.cols-2, .grid.cols-3 { grid-template-columns: minmax(0, 1fr); }
+  .hud { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .hud .ring-row { display: flex; align-items: center; gap: 14px; }
-  .research-split { grid-template-columns: 1fr !important; }
 }
 
 @media (max-width: 639px) {
@@ -727,7 +728,7 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(.8) sepia
     animation: rise 180ms var(--ease);
   }
   .grabber { display: block; }
-  .field-pair, .field-grid { grid-template-columns: 1fr; }
+  .field-pair, .field-grid { grid-template-columns: minmax(0, 1fr); }
   .hud .readout b { font-size: 22px; }
   .group-head { top: var(--topbar-h); }
 }
