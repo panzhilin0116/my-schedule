@@ -8,6 +8,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { TABLE_NAMES, TABLES, validateRow } from '../../functions/registry.mjs';
+import { handleApp } from '../../functions/handler.mjs';
+import { createFakeSupabase } from '../fake-supabase.mjs';
 import { buildSeed } from '../seed.mjs';
 import { createPreviewServer } from '../preview-server.mjs';
 import { read, assertModuleParses } from './helpers.mjs';
@@ -691,6 +693,69 @@ test('S3 导入与清空以服务端为准重建内存表', async () => {
   assert.equal(store.table('tasks').length, 0);
   assert.equal(store.state.config, null, '学期配置也被清空');
   assert.ok(calls.includes('wipe'));
+});
+
+test('S3 清空与导入完成后「最近同步」要跟着走：这行说的是云端现在的样子', async () => {
+  // 各用例自己的库：预览服务器那份 db 是模块级的，清空会连累同文件其他用例
+  const db = createFakeSupabase(buildSeed(new Date('2026-09-20T12:00:00')));
+  const api = createApi({
+    baseUrl: 'http://localhost/functions/v1/app',
+    fetchImpl: (input, options) => handleApp({ request: new Request(input, options), supabase: db }),
+  });
+  const clock = { now: new Date('2026-09-20T08:00:00.000Z') };
+  const store = createStore({ api, now: () => clock.now, timer: { set: () => 0, clear: () => {} } });
+  await store.load();
+  assert.equal(store.state.loadedAt, '2026-09-20T08:00:00.000Z');
+  const backup = structuredClone(store.state.tables);
+  assert.ok(backup.courses.length > 0 && backup.semester_config.length > 0, 'seed 要够，否则清空前后比不出差别');
+
+  clock.now = new Date('2026-09-20T08:01:00.000Z');
+  await store.wipeAll();
+  assert.equal(store.table('courses').length, 0);
+  assert.equal(store.state.config, null);
+  assert.equal(store.state.loadedAt, '2026-09-20T08:01:00.000Z',
+    '清空完成后这行还停在清空之前，用户读到的是"我刚才那一下没生效"');
+
+  clock.now = new Date('2026-09-20T08:02:00.000Z');
+  await store.importSnapshot(backup);
+  assert.equal(store.table('courses').length, backup.courses.length, '导入以后课程数要回到导入前');
+  assert.equal(store.state.config?.total_weeks, 18, '学期基准跟着备份一起回来');
+  assert.equal(store.state.loadedAt, '2026-09-20T08:02:00.000Z');
+});
+
+test('S3 导入不能被上一次在飞的回读糊回旧数据：那次回读拿到的是导入前的云端', async () => {
+  const { store, api, tables } = stubStore();
+  await store.load();
+  const imported = {
+    ...Object.fromEntries(TABLE_NAMES.map((name) => [name, []])),
+    tasks: [{ id: uuid(), title: '导入的', due_date: '2026-09-21', due_time: null, done: false, category: '作业', duration_min: 30, note: null, created_at: '2026-09-20T00:00:00.000Z', updated_at: '2026-09-20T00:00:00.000Z' }],
+    semester_config: tables.semester_config,
+  };
+  // 上一次写入留下的静默回读还在路上：真实服务端会返回"请求发出那一刻"的快照
+  const online = api.bootstrap;
+  let reads = 0;
+  api.bootstrap = async () => {
+    reads += 1;
+    const atRequest = structuredClone(tables);
+    if (reads === 1) await new Promise((resolve) => setTimeout(resolve, 30));
+    const result = await online();
+    return {
+      ...result,
+      data: { tables: atRequest, config: atRequest.semester_config[0] ?? null, limits: result.data.limits },
+    };
+  };
+  api.importSnapshot = async (next) => {
+    for (const name of TABLE_NAMES) tables[name] = structuredClone(next[name] ?? []);
+    return { ok: true, counts: {} };
+  };
+
+  const inflight = store.refresh();
+  await tick();
+  await store.importSnapshot(imported);
+  await inflight;
+  assert.equal(store.table('tasks').length, 1);
+  assert.equal(store.table('tasks')[0].title, '导入的',
+    '导入结果被导入前的那份回读覆盖掉了：跟着在飞的请求走会拿到写之前的云端');
 });
 
 // ── seed 与预览服务器 ──────────────────────────────────────

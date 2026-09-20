@@ -129,6 +129,16 @@ export function createStore({
 
   const refresh = () => load({ silent: true });
 
+  /**
+   * 整体替换（清空 / 导入）之后的回读：不能跟着在飞的那次回读走，
+   * 它是写之前发出的，拿回来的是旧云端，会把刚导入的内容从界面上糊掉。
+   */
+  async function reload() {
+    const inflight = state.loader;
+    if (inflight) await inflight.catch(() => {});
+    return load();
+  }
+
   function table(name) {
     return state.tables[name] ?? [];
   }
@@ -286,6 +296,7 @@ export function createStore({
       state.tables = emptyTables();
       state.config = null;
       notify();
+      await reload();
       return result;
     } finally {
       endWrite();
@@ -297,7 +308,7 @@ export function createStore({
     try {
       const result = await api.importSnapshot(tables);
       notify();
-      await load();
+      await reload();
       return result;
     } finally {
       endWrite();
