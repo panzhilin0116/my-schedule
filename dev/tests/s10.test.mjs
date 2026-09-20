@@ -99,6 +99,23 @@ test('S10 窄屏不横向溢出：栅格轨道一律 minmax(0,…) 或自适应�
   assert.match(css, /\.truncate\s*\{[^}]*min-width:\s*0/);
 });
 
+test('S10 窄屏顶栏压成一行：日期与学期周次都留下，而不是整块藏掉时间戳', async () => {
+  const block = mediaBlock(css, '@media (max-width: 639px)');
+  // PRD v1.0 总纲 2.2 说的是「顶栏压缩为一行」，读数本身要在；
+  // display:none 只是把周次从手机上删掉了，首页 HUD 之外就没地方读今天是第几周
+  const clockRules = [...block.matchAll(/([^{}\n]+)\{([^}]*)\}/g)].filter((rule) => /\.clock\b/.test(rule[1]));
+  for (const rule of clockRules) {
+    assert.equal(/display:\s*none/.test(rule[2]), false,
+      `窄屏规则 ${rule[1].trim()} 把顶栏的日期与周次整块藏掉了`);
+  }
+  assert.ok(clockRules.some((rule) => /display:\s*flex/.test(rule[2])),
+    '窄屏要把日期与周次并成一行：顶栏是定高的，两行叠着放不下');
+  // 让位的必须是可伸缩的标题，而不是读数——标题不给收缩，一行读数就把顶栏顶出横向滚动
+  assert.match(css, /\.topbar \.titles \{[^}]*min-width:\s*0/);
+  assert.match(block, /\.topbar \.titles(?: h1)?\s*\{[^}]*(flex:\s*1|text-overflow:\s*ellipsis)/,
+    '窄屏下页面标题要能收缩或被裁掉，不然先挤出去的是周次');
+});
+
 test('S10 文案里没有占位符与开发残留', async () => {
   const banned = /TODO|FIXME|XXX|lorem ipsum|待补充|未实现|敬请期待|临时文案/i;
   const hits = [];

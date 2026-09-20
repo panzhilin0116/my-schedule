@@ -720,7 +720,13 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(.8) sepia
   body { font-size: 14px; }
   /* PRD 3：移动端每卡只留前 2 条，其余交给 CSS 收起，缩放窗口不必重绘 */
   .hide-sm { display: none; }
-  .topbar .clock { display: none; }
+  /* PRD v1.0 总纲 2.2：窄屏顶栏「压缩为一行」——日期与学期周次都要留下，
+     让位的是装饰性的英文副标题和页面标题（可截断），而不是读数本身 */
+  .topbar { gap: 8px; }
+  .topbar .titles h1 { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar .titles span { display: none; }
+  .topbar .clock { display: flex; align-items: baseline; gap: 6px; font-size: 11px; white-space: nowrap; }
+  .topbar .clock b::before { content: '·'; margin-inline-end: 6px; color: var(--ink-faint); }
   .layer-veil { padding: 0; place-items: end stretch; }
   .layer {
     width: 100%; max-height: 92dvh; border-radius: var(--r-lg) var(--r-lg) 0 0;
