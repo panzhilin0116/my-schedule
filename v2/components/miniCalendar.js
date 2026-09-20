@@ -1,5 +1,5 @@
-import { h } from '../lib/dom.js';
-import { openOverlay } from '../lib/feedback.js';
+import { h, qs } from '../lib/dom.js';
+import { openOverlay, closeOverlay } from '../lib/feedback.js';
 import { COURSES } from '../data/courses.js';
 import { weekOf, dayKey } from '../lib/time.js';
 import { loadTasks } from '../lib/store.js';
@@ -16,21 +16,35 @@ function monthMatrix(year, month /* 0-based */) {
   return cells;
 }
 
-export function buildMiniCalendar(now = new Date(), taskDates = null) {
+function renderCalendarBody(viewDate, taskDates, onNavigate) {
   const courseDays = new Set();
   for (const c of COURSES) {
     for (let w = 0; w < 14; w += 1) {
       const d = new Date(2026, 8, 7 + (c.day - 1) + w * 7);
-      if (d.getMonth() === now.getMonth()) courseDays.add(d.getDate());
+      if (d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear()) {
+        courseDays.add(d.getDate());
+      }
     }
   }
-  const dates = taskDates ?? new Set(loadTasks().map((t) => t.date));
-  const cells = monthMatrix(now.getFullYear(), now.getMonth());
-  const todayKey = dayKey(now);
+  const cells = monthMatrix(viewDate.getFullYear(), viewDate.getMonth());
+  const todayKey = dayKey(new Date());
+
+  const prevBtn = h('button', {
+    class: 'cal-nav-btn', type: 'button', 'aria-label': '上个月',
+    onclick: () => onNavigate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1)),
+  }, '‹');
+  const nextBtn = h('button', {
+    class: 'cal-nav-btn', type: 'button', 'aria-label': '下个月',
+    onclick: () => onNavigate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1)),
+  }, '›');
 
   return h(
     'div', { class: 'cal' },
-    h('div', { class: 'cal-title' }, `${now.getFullYear()}年${now.getMonth() + 1}月`),
+    h('div', { class: 'cal-header' },
+      prevBtn,
+      h('div', { class: 'cal-title' }, `${viewDate.getFullYear()}年${viewDate.getMonth() + 1}月`),
+      nextBtn,
+    ),
     h('div', { class: 'cal-grid' },
       ...CELL_LABELS.map((l) => h('div', { class: 'cal-cell cal-cell--head' }, l)),
       ...cells.map((d) => {
@@ -38,7 +52,7 @@ export function buildMiniCalendar(now = new Date(), taskDates = null) {
         const key = dayKey(d);
         const marks = [];
         if (courseDays.has(d.getDate()) && weekOf(d) !== null) marks.push(h('i', { class: 'cal-dot cal-dot--course' }));
-        if (dates.has(key)) marks.push(h('i', { class: 'cal-dot cal-dot--task' }));
+        if (taskDates.has(key)) marks.push(h('i', { class: 'cal-dot cal-dot--task' }));
         return h('div', {
           class: `cal-cell${key === todayKey ? ' cal-cell--today' : ''}`,
           'data-day': key,
@@ -52,6 +66,24 @@ export function buildMiniCalendar(now = new Date(), taskDates = null) {
   );
 }
 
+export function buildMiniCalendar(viewDate = new Date(), taskDates = null) {
+  const dates = taskDates ?? new Set(loadTasks().map((t) => t.date));
+  return renderCalendarBody(viewDate, dates, () => {});
+}
+
 export function openMiniCalendar(now = new Date()) {
-  return openOverlay({ title: '校历月历', body: buildMiniCalendar(now) });
+  let viewDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  const taskDates = new Set(loadTasks().map((t) => t.date));
+
+  function navigate(newDate) {
+    viewDate = newDate;
+    const newBody = renderCalendarBody(viewDate, taskDates, navigate);
+    const overlayBody = qs('.overlay-body');
+    if (overlayBody && overlayBody.firstChild) {
+      overlayBody.replaceChild(newBody, overlayBody.firstChild);
+    }
+  }
+
+  const body = renderCalendarBody(viewDate, taskDates, navigate);
+  return openOverlay({ title: '校历月历', body });
 }

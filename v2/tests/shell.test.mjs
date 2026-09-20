@@ -105,3 +105,13 @@ test('空态组件带引导按钮', () => {
   document.querySelector('#view .empty .btn').click();
   assert.equal(clicked, 1);
 });
+
+test('迷你月历：上/下个月按钮可翻月', async () => {
+  const { buildMiniCalendar } = await import('../components/miniCalendar.js');
+  const taskDates = new Set();
+  const sept = new Date(2026, 8, 20);
+  const cal = buildMiniCalendar(sept, taskDates);
+  assert.match(cal.querySelector('.cal-title').textContent, /2026年9月/);
+  assert.ok(cal.querySelector('.cal-nav-btn[aria-label="上个月"]'));
+  assert.ok(cal.querySelector('.cal-nav-btn[aria-label="下个月"]'));
+});
