@@ -110,7 +110,7 @@ export function render(el, params, now = new Date()) {
       h('h2', { class: 'hm-h' }, '今日课程'),
       courses.length
         ? h('div', { class: 'hm-courses' }, ...courses.map((c) => courseRow(c, now)))
-        : renderEmpty({ icon: '☀', text: weekOf(now) === null ? '非教学周，无课程安排' : '今天没有课' }),
+        : renderEmpty({ text: weekOf(now) === null ? '非教学周，无课程安排' : '今天没有课' }),
     ),
   );
 
