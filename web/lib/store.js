@@ -94,8 +94,11 @@ export function createStore({
       // 失败就会变成无人处理的拒绝（撤销窗口结束后的浮动作最容易踩到）
       try { return await state.loader; } catch { return snapshot(); }
     }
+    // 屏幕上有可读数据时失败只标陈旧，一条数据都没有时失败必须落到错误态：
+    // 两头都不能停在 loading，那是张永远转不完的骨架屏
+    const readable = state.status === 'ready';
     state.inflight += 1;
-    state.status = state.status === 'ready' ? 'ready' : 'loading';
+    state.status = readable ? 'ready' : 'loading';
     if (!silent) state.error = null;
     notify();
     const request = (async () => {
@@ -114,8 +117,8 @@ export function createStore({
     try {
       return await request;
     } catch (error) {
-      if (!silent && state.status !== 'ready') state.status = 'error';
-      state.error = { message: error.message, code: error.code ?? 'unknown', retry: true };
+      state.status = readable ? 'ready' : 'error';
+      state.error = { message: error.message, code: error.code ?? 'unknown', retry: true, stale: readable };
       return snapshot();
     } finally {
       state.loader = null;

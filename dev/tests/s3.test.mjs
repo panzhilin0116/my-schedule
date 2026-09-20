@@ -376,6 +376,8 @@ function stubStore({ overrides = {}, prefs, events } = {}) {
   const tables = baseTables();
   const calls = [];
   const timers = { pending: new Map(), next: 0, fired: [] };
+  // 桩时钟可以由用例推着走，这样"时间戳有没有刷新"才是可断言的
+  const clock = { now: new Date('2026-09-20T08:00:00.000Z') };
   const api = {
     async bootstrap() { calls.push('bootstrap'); return { ok: true, serverTime: '2026-09-20T00:00:00.000Z', data: { tables, config: tables.semester_config[0], limits: { tasks: 5000 } } }; },
     async create(table, row) { calls.push(`create:${table}`); const record = { ...row, id: uuid(), created_at: '2026-09-20T00:00:00.000Z', updated_at: '2026-09-20T00:00:00.000Z' }; tables[table] = [...tables[table], record]; return { ok: true, row: record }; },
@@ -396,7 +398,7 @@ function stubStore({ overrides = {}, prefs, events } = {}) {
     prefs,
     events,
     undoMs: 5000,
-    now: () => new Date('2026-09-20T08:00:00.000Z'),
+    now: () => clock.now,
     timer: {
       set: (fn, ms) => { const handle = ++timers.next; timers.pending.set(handle, { fn, ms }); return handle; },
       clear: (handle) => { timers.pending.delete(handle); },
@@ -409,7 +411,7 @@ function stubStore({ overrides = {}, prefs, events } = {}) {
     await entry.fn();
     await tick();
   };
-  return { store, api, tables, calls, timers, fire };
+  return { store, api, tables, calls, timers, fire, clock };
 }
 
 test('S3 load 建立快照，读写都经过同一份内存表', async () => {
@@ -443,6 +445,45 @@ test('S3 加载失败进入错误态并可重试，不显示空数据', async ()
   assert.equal(state.error.code, 'database_request_failed');
   assert.equal(state.error.retry, true);
   assert.match(state.error.message, /稍后重试/);
+});
+
+test('S3 首屏的静默回读失败也要落到错误态，绝不停在骨架屏', async () => {
+  // 骨架屏阶段就切到后台再切回来（visibilitychange → refresh()）走的是这条路
+  const { store, api } = stubStore();
+  const online = api.bootstrap;
+  api.bootstrap = async () => { throw new ApiError('网络连接中断', 'network_error'); };
+  const state = await store.refresh();
+  assert.equal(state.status, 'error', `静默回读失败后停在 ${state.status}，界面就是一张永远转不完的骨架屏`);
+  assert.equal(state.error.retry, true, '错误态必须带可重试标记，外壳才知道要不要挂重试按钮');
+  // 重试路径确实能走通
+  api.bootstrap = online;
+  const retried = await store.load();
+  assert.equal(retried.status, 'ready');
+  assert.equal(retried.error, null);
+});
+
+test('S3 已有数据时回读失败：继续用旧数据并标成陈旧，既不闪骨架屏也不静默假装最新', async () => {
+  for (const silent of [true, false]) {
+    const { store, api, clock } = stubStore();
+    const online = api.bootstrap;
+    const loaded = await store.load();
+    const before = loaded.loadedAt;
+    assert.equal(store.table('tasks').length, 1);
+    api.bootstrap = async () => { throw new ApiError('网络连接中断', 'network_error'); };
+    const state = silent ? await store.refresh() : await store.load();
+    assert.equal(state.status, 'ready', `silent=${silent}：有缓存可读时不该把界面打回${state.status}`);
+    assert.equal(store.table('tasks').length, 1, '旧数据要留在屏幕上，不能清空成空白页');
+    assert.equal(state.loadedAt, before, '这一轮没同步上，时间戳不能假装往前走');
+    assert.equal(state.error?.stale, true, `silent=${silent}：必须留下"这次没同步上"的标记，否则用户以为看到的是最新的`);
+    assert.equal(state.error.retry, true);
+    assert.equal(state.error.code, 'network_error');
+    // 下一次成功回读要把它清掉
+    clock.now = new Date('2026-09-20T08:05:00.000Z');
+    api.bootstrap = online;
+    const recovered = await store.refresh();
+    assert.equal(recovered.error, null, '同步恢复后陈旧标记还挂着');
+    assert.equal(recovered.loadedAt, '2026-09-20T08:05:00.000Z', '成功回读要把时间戳推到这一轮');
+  }
 });
 
 test('S3 新建立即出现在列表里，落库后换成服务端行并回读', async () => {

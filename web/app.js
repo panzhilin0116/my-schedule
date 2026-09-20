@@ -93,6 +93,11 @@ function renderTopbar(route) {
       h('div', { text: T.fmtDate(today) }),
       h('b', { text: week ? `第 ${week} 周 / 共 ${state.config.total_weeks} 周` : (state.config ? '假期 / 学期外' : '未设置学期') }),
     ),
+    // 有旧数据可读时不回骨架屏，但必须当场说明"这一屏不是刚同步来的"
+    state.error?.stale ? h('span.badge.red.stale', {
+      role: 'status', 'aria-label': '上次同步失败，界面显示的是上一次的数据',
+      title: `${state.error.message}（显示的是上一次成功同步的数据）`, text: '同步失败',
+    }) : null,
     h('button.iconbtn', {
       type: 'button', 'aria-label': '刷新数据', title: '刷新数据',
       onclick: async (event) => {
@@ -201,9 +206,11 @@ function bindPullToRefresh() {
     const dy = (event.changedTouches?.[0]?.clientY ?? startY) - startY;
     setProgress(0);
     if (dy > 70) {
-      await store.refresh();
+      const result = await store.refresh();
       render();
-      toast('已同步最新数据', { kind: 'ok', duration: 2000 });
+      // 失败要说失败：给出"已同步"的成功回执，比不刷新更容易骗人
+      if (result.error?.stale) toast('同步失败，界面上还是上一次的数据', { kind: 'error', duration: 4000 });
+      else toast('已同步最新数据', { kind: 'ok', duration: 2000 });
     }
   };
   view.addEventListener('touchend', finish);

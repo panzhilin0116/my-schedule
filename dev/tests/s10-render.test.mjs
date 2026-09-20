@@ -8,7 +8,7 @@ import { createApi } from '../../web/lib/api.js';
 import { read } from './helpers.mjs';
 import {
   withDom, seedState, emptyAppState, liveCtx, fakeCtx, texts, viewRenders, viewArgs,
-  TODAY, settle, waitUntil, app, intervals, emitWindow, topTitle, go,
+  TODAY, settle, waitUntil, app, intervals, emitWindow, topTitle, go, toastTexts,
 } from './render-harness.mjs';
 
 // 晚到的重绘会砸在已还原的全局上，只报一句 "document is not defined"。把栈打出来才查得到是谁。
@@ -148,6 +148,62 @@ test('S10 C18：断网时写请求只发一次，失败后回读确认而不自�
     await new Promise((resolve) => server.close(resolve));
   }
   assert.deepEqual(rejections, [], `断网期间冒出了未捕获的 Promise 异常：${rejections.join(' | ')}`);
+});
+
+/** C18 的延伸路径：数据已经读到手之后才断网（切前台、下拉刷新、点刷新都不再是首屏）。 */
+test('S10 C18 延伸：读到数据后同步失败，界面继续可读并当场说明，不谎报"已同步"', async () => {
+  const server = createPreviewServer({ port: 0 });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const realFetch = globalThis.fetch;
+  const rejections = [];
+  const onRejection = (reason) => rejections.push(String(reason?.message ?? reason));
+  process.on('unhandledRejection', onRejection);
+  try {
+    await withDom(async () => {
+      globalThis.fetch = (input, init) => realFetch(String(input).startsWith('http') ? input : `${origin}${input}`, init);
+      app.start();
+      assert.equal(await waitUntil(() => app.store.state.status === 'ready' && app.store.state.inflight === 0, 9000), true, '没能在断网前拿到数据');
+      const view = document.getElementById('view');
+      const hudBefore = texts(view.querySelector('.hud'));
+      assert.ok(hudBefore.length > 1, '首页读数没渲染出来，这条用例就成了空转');
+
+      globalThis.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+      // 真实控件：顶栏「刷新数据」
+      const refresh = document.getElementById('topbar').querySelector('button[aria-label="刷新数据"]');
+      assert.ok(refresh, '顶栏没有刷新按钮');
+      refresh.click();
+      assert.equal(await waitUntil(() => app.store.state.error?.stale === true, 9000), true, '回读失败没有留下陈旧标记');
+
+      assert.equal(app.store.state.status, 'ready', `同步失败把状态打回了 ${app.store.state.status}`);
+      assert.equal(view.querySelector('.skeleton'), null, '同步失败把有数据的界面打回了骨架屏');
+      assert.equal(view.querySelector('.empty[role="alert"]'), null, '有旧数据可读时不该整屏换成错误态');
+      assert.equal(texts(view.querySelector('.hud')), hudBefore, '旧数据被清掉了');
+      const stale = document.getElementById('topbar').querySelector('.stale');
+      assert.ok(stale, '同步失败在界面上没有任何回执，用户会以为看到的还是最新的');
+      assert.match(stale.textContent, /同步失败|未同步|离线/, `陈旧提示文案不清楚：${texts(stale)}`);
+      assert.equal(stale.getAttribute('role'), 'status', '这个回执要当场念给读屏用户');
+
+      // 下拉刷新同样不能给出成功回执
+      view.fire('touchstart', { touches: [{ clientY: 0 }] });
+      view.fire('touchmove', { touches: [{ clientY: 100 }] });
+      view.fire('touchend', { changedTouches: [{ clientY: 100 }] });
+      assert.equal(await waitUntil(() => toastTexts().length > 0, 9000), true, '下拉刷新没有任何反馈');
+      assert.equal(toastTexts().some((line) => /已同步最新数据/.test(line)), false, `同步失败却说"已同步最新数据"：${toastTexts().join(' | ')}`);
+      assert.equal(toastTexts().some((line) => /同步失败|网络|不是最新/.test(line)), true, `下拉刷新的失败回执不清楚：${toastTexts().join(' | ')}`);
+
+      // 恢复网络后一次成功回读要把回执撤掉
+      globalThis.fetch = (input, init) => realFetch(String(input).startsWith('http') ? input : `${origin}${input}`, init);
+      document.getElementById('topbar').querySelector('button[aria-label="刷新数据"]').click();
+      assert.equal(await waitUntil(() => app.store.state.error === null, 9000), true, '恢复网络后陈旧标记还挂着');
+      assert.equal(document.getElementById('topbar').querySelector('.stale'), null, '恢复后提示条要撤掉');
+    });
+  } finally {
+    process.off('unhandledRejection', onRejection);
+    globalThis.fetch = realFetch;
+    await new Promise((resolve) => server.close(resolve));
+  }
+  assert.deepEqual(rejections, [], `同步失败期间冒出了未捕获的 Promise 异常：${rejections.join(' | ')}`);
 });
 
 // ── 统一加载骨架 ──────────────────────────────────────────
