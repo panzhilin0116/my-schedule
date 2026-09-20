@@ -152,6 +152,20 @@ test('首屏骨架：index.html 的 #view 自带骨架，首次渲染即被替�
   stop();
 });
 
+test('Service Worker：sw.js 存在且缓存清单完整', () => {
+  const swPath = join(V2, 'sw.js');
+  const swSrc = readFileSync(swPath, 'utf8');
+  assert.match(swSrc, /const CACHE = ['"]schedule-v1['"]/);
+  assert.match(swSrc, /ASSETS\s*=\s*\[/);
+  for (const asset of ['/index.html', '/styles.css', '/main.js', '/lib/dom.js', '/views/home.js']) {
+    assert.ok(swSrc.includes(asset), `sw.js 缓存清单缺 ${asset}`);
+  }
+  assert.match(swSrc, /self\.addEventListener\('install'/);
+  assert.match(swSrc, /self\.addEventListener\('fetch'/);
+  const mainSrc = readFileSync(join(V2, 'main.js'), 'utf8');
+  assert.match(mainSrc, /navigator\.serviceWorker\.register\(['"]\/sw\.js['"]\)/);
+});
+
 test('清理定时器', () => {
   tasksView.__reset();
   timetableView.__stop();

@@ -55,4 +55,7 @@ export function boot() {
   });
 }
 
-if (typeof window !== 'undefined' && qs('#view')) boot();
+if (typeof window !== 'undefined' && qs('#view')) {
+  boot();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
