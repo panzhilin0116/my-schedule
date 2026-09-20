@@ -126,7 +126,7 @@ export function render(el, params, now = new Date()) {
       ),
       todayTasks.length
         ? h('div', { class: 'hm-tasks' }, ...todayTasks.map((t) => taskLine(t, now)))
-        : h('p', { class: 'hm-none' }, '今天没有日程'),
+        : renderEmpty({ text: '今天没有日程', actionText: '记一笔', onAction: () => openTaskForm({ onSaved: rerender }) }),
     ),
   );
 

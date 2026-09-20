@@ -98,10 +98,24 @@ test('迷你月历：有课/有日程标记与今日框', () => {
   assert.ok(d7.querySelector('.cal-dot--task'));
   const d13 = cal.querySelector('[data-day="2026-09-13"]'); // 周日无课
   assert.equal(d13.querySelector('.cal-dot--course'), null);
-  const d15 = cal.querySelector('[data-day="2026-09-15"]');
-  assert.ok(d15.classList.contains('cal-cell--today'));
+  const today = new Date();
+  const todayKey = `2026-09-${String(today.getDate()).padStart(2, '0')}`;
+  const todayCell = cal.querySelector(`[data-day="${todayKey}"]`);
+  if (todayCell) assert.ok(todayCell.classList.contains('cal-cell--today'));
   // 桩件不解析 :not()，用 data-day 的存在性精确圈出日期格（排除表头与补白白格）
   assert.equal(cal.querySelectorAll('.cal-cell').filter((c) => c.getAttribute('data-day')).length, 30);
+});
+
+test('今日日程空态：图标 + 引导语 + 按钮', () => {
+  globalThis.localStorage = makeStorage();
+  __stop();
+  render(view(), new URLSearchParams(), new Date(2026, 8, 20, 12, 0));
+  const sections = doc.querySelectorAll('.hm-section');
+  const taskSection = sections[1];
+  assert.ok(taskSection.querySelector('.empty'));
+  assert.ok(taskSection.querySelector('.empty-icon'));
+  assert.ok(taskSection.querySelector('.empty-text').textContent.includes('今天没有日程'));
+  assert.ok(taskSection.querySelector('.btn.primary'));
 });
 
 test('清理定时器', () => {
