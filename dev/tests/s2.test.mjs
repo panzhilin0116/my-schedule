@@ -106,6 +106,34 @@ test('S2 服务端生成 ID 与时间戳，拒绝浏览器提交', async () => {
   assert.equal((await call(supabase, 'bootstrap')).json.data.tables.courses.length, 0, '非法请求不得落库');
 });
 
+test('S2 缺练带时长的记录在入口就被拒，0 分缺练能落库', async () => {
+  const supabase = freshDb();
+  const base = { workout_date: '2026-09-19', type: '力量', note: null };
+  const rejected = await call(supabase, 'create', {
+    method: 'POST', body: { table: 'workouts', row: { ...base, duration_min: 30, status: 'missed' } },
+  });
+  assert.equal(rejected.status, 400, '缺练还带 30 分钟，两种时长口径必然对不上');
+  assert.equal(rejected.json.field, 'duration_min', '提示要挂在时长字段上，用户才知道改哪里');
+  assert.match(rejected.json.message, /缺练/);
+  const missed = await call(supabase, 'create', {
+    method: 'POST', body: { table: 'workouts', row: { ...base, duration_min: 0, status: 'missed' } },
+  });
+  assert.equal(missed.status, 200, missed.json.message ?? '');
+  const trained = await call(supabase, 'create', {
+    method: 'POST', body: { table: 'workouts', row: { ...base, duration_min: 30, status: 'done' } },
+  });
+  assert.equal(trained.status, 200, trained.json.message ?? '');
+  // 编辑同样拦：把一笔 30 分钟改成缺练，不能把 30 分悄悄留在库里
+  const patched = await call(supabase, 'update', {
+    method: 'POST', body: { table: 'workouts', id: trained.json.row.id, patch: { status: 'missed' } },
+  });
+  assert.equal(patched.status, 400, 'partial 更新绕过了跨字段校验');
+  const after = await call(supabase, 'bootstrap');
+  const stored = after.json.data.tables.workouts.find((item) => item.id === trained.json.row.id);
+  assert.equal(stored.status, 'done', '被拒的更新不得改动已有行');
+  assert.equal(stored.duration_min, 30);
+});
+
 test('S2 四种非法取值各自返回 400 与字段名', async () => {
   const supabase = freshDb();
   const cases = [

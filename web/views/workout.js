@@ -54,6 +54,8 @@ function workoutFields(candidates) {
 /**
  * 记一笔（C15）：日期=今天、时长=45 分、完成度=完成，所以从打开到存下只有
  * 选类型、调时长、按保存这 3 次点击；类型是必填项，留空时提交按钮就是禁用的。
+ * 补记走同一个表单，只多带一个日期：把「缺练 + 0 分」预置进去，等于替用户改口，
+ * 练过的一天会被悄悄记成没练（缺练只能由用户在完成度里明选）。
  */
 function logForm({ store }, candidates, today, preset = {}) {
   return openLayer({
@@ -185,7 +187,7 @@ function statsPanel(workouts, range, stats, today, helpers) {
         h('h4', { text: `近 ${HEAT_WEEKS} 周热力` }),
         heatGrid(heat, {
           today, minutesByDate,
-          onPick: (date) => logForm(helpers, typeCandidates(workouts), today, { workout_date: date, status: 'missed', duration_min: 0 }),
+          onPick: (date) => logForm(helpers, typeCandidates(workouts), today, { workout_date: date }),
         }),
         h('div.chart-caption.tiny.faint', {
           text: `颜色越亮练得越久，点空格子补记这笔；共 ${new Set(workouts.filter((item) => item.status !== 'missed').map((item) => item.workout_date)).size} 天有训练`,
@@ -228,7 +230,7 @@ function blankDay(date, helpers, candidates, today) {
     h('div.spacer'),
     h('button.chip', {
       type: 'button', text: '补记', 'aria-label': `补记 ${date}`,
-      onclick: () => logForm(helpers, candidates, today, { workout_date: date, status: 'missed', duration_min: 0 }),
+      onclick: () => logForm(helpers, candidates, today, { workout_date: date }),
     }),
   );
 }

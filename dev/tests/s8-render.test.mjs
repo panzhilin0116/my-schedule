@@ -189,7 +189,7 @@ test('S8 缺练改成部分完成，连续天数立刻重新接上（C13）', as
   });
 });
 
-test('S8 空档与热力格都能补记这一笔，日期已经填好', async () => {
+test('S8 空档与热力格都能补记这一笔：日期填好，练过的记录不被悄悄改成 0 分缺练', async () => {
   await page(async ({ render, state, writes }) => {
     const node = render();
     const blank = listRows(node).find((row) => row.classList.contains('blank'));
@@ -198,18 +198,39 @@ test('S8 空档与热力格都能补记这一笔，日期已经填好', async ()
     assert.equal(date, TODAY, '今天还没练，第一条空档就该是今天');
     click(byAria(blank, `补记 ${date}`));
     const layer = layerWith(`补记 ${date}`);
-    assert.equal(valueOf(layer, '日期'), date);
-    assert.equal(pressed(optionIn(layer, '完成度', 'missed')), true, '空格补出来该默认是缺练');
-    assert.equal(minutesOf(layer), '0 分');
+    assert.equal(valueOf(layer, '日期'), date, '补记只该把日期带过去');
+    // 补记的是"这一天我练了什么"，缺练要在表单里明选，不能是藏在预设里的默认值
+    assert.equal(pressed(optionIn(layer, '完成度', 'missed')), false, '补记一打开就预置成缺练，等于替用户改口');
+    assert.equal(pressed(optionIn(layer, '完成度', 'done')), true, '默认完成度要和「记一笔」一致');
+    assert.equal(minutesOf(layer), '45 分', '默认时长要和「记一笔」一致，不能是 0');
     click(chipIn(layer, '运动类型', '骑行'));
+    click(chipIn(layer, '时长(分钟)', '60'));
+    assert.equal(minutesOf(layer), '60 分', '时长档位点了没反应，后面的断言就是空转');
     click(submitButton(layer));
     await settle(4);
+    assert.equal(writes.at(-1).row.duration_min, 60, '用户改过的时长被丢掉了');
+    assert.equal(writes.at(-1).row.status, 'done', '用户没选缺练，落库却成了缺练');
     assert.deepEqual(writes.at(-1).row, {
-      workout_date: date, type: '骑行', duration_min: 0, status: 'missed', note: null,
+      workout_date: date, type: '骑行', duration_min: 60, status: 'done', note: null,
     });
     assert.equal(state.tables.workouts.filter((item) => item.workout_date === date).length, 1);
     assert.equal(listRows(render()).filter((row) => row.classList.contains('blank'))
       .some((row) => row.dataset.date === date), false, '补上以后这一格不该还是空的');
+
+    // 真要标缺练仍然走得到：显式选完成度=缺练，并把时长调到 0，落库才是 0 分缺练
+    const next = listRows(render()).find((row) => row.classList.contains('blank'));
+    click(byAria(next, `补记 ${next.dataset.date}`));
+    const missedLayer = layerWith(`补记 ${next.dataset.date}`);
+    click(optionIn(missedLayer, '完成度', 'missed'));
+    for (let index = 0; index < 12 && minutesOf(missedLayer) !== '0 分'; index += 1) {
+      click(byAria(missedLayer, '时长(分钟)减少 5'));
+    }
+    assert.equal(minutesOf(missedLayer), '0 分', '时长调不到 0，缺练这条路在界面上走不通');
+    click(chipIn(missedLayer, '运动类型', '其它'));
+    click(submitButton(missedLayer));
+    await settle(4);
+    assert.equal(writes.at(-1).row.status, 'missed');
+    assert.equal(writes.at(-1).row.duration_min, 0);
 
     // 热力格：点一格没记录的日子，同样开到补记表单
     const cell = render().querySelectorAll('.heat i').find((item) => item.dataset.state === 'none');
@@ -217,6 +238,7 @@ test('S8 空档与热力格都能补记这一笔，日期已经填好', async ()
     const heatLayer = layerWith(`补记 ${cell.dataset.date}`);
     assert.ok(heatLayer, '热力格点空档没开出补记表单');
     assert.equal(valueOf(heatLayer, '日期'), cell.dataset.date);
+    assert.equal(pressed(optionIn(heatLayer, '完成度', 'missed')), false, '热力格补记也不该预置成缺练');
     cancel(heatLayer);
   });
 });

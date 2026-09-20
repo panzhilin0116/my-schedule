@@ -200,6 +200,9 @@ export const TABLES = {
       created_at: { kind: 'timestamptz', server: true, label: '创建时间' },
       updated_at: { kind: 'timestamptz', server: true, label: '更新时间' },
     },
+    // 「缺练」是时间线上的占位，不是一笔训练：带着时长入库，总时长和分组时长就会各算各的
+    crossChecks: [{ fields: ['status', 'duration_min'], message: '缺练不计时长，请把时长改成 0',
+      test: (row) => row.status !== 'missed' || Number(row.duration_min) === 0 }],
     maxRows: 5000,
   },
 };

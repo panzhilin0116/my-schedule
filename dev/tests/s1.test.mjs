@@ -115,6 +115,24 @@ test('S1 validateRow 拒绝缺失必填、越界与非法格式', () => {
   }
 });
 
+test('S1 契约：缺练这条记录不带时长', () => {
+  const missed = validateRow('workouts', { workout_date: '2026-09-19', type: '力量', duration_min: 0, status: 'missed' });
+  assert.equal(missed.ok, true, missed.error);
+  const inflated = validateRow('workouts', { workout_date: '2026-09-19', type: '力量', duration_min: 30, status: 'missed' });
+  assert.equal(inflated.ok, false, '缺练还带 30 分钟，页面里的总时长和分组时长必然对不上');
+  assert.equal(inflated.field, 'duration_min', '提示要挂在时长字段上，用户才知道改哪里');
+  assert.match(inflated.error, /缺练/, `文案没点名缺练：${inflated.error}`);
+  // 编辑路径同理：只把完成度改成缺练，合并后的行仍带着旧时长，也要拦
+  const edited = validateRow('workouts', { status: 'missed' }, {
+    partial: true, existing: { workout_date: '2026-09-19', type: '力量', duration_min: 30, status: 'done' },
+  });
+  assert.equal(edited.ok, false, '把一笔 30 分钟改成缺练，不能把 30 分悄悄留在库里');
+  // 练过的那两类不受影响
+  for (const status of ['done', 'partial']) {
+    assert.equal(validateRow('workouts', { workout_date: '2026-09-19', type: '力量', duration_min: 45, status }).ok, true, `${status} 不该被这条规则挡住`);
+  }
+});
+
 test('S1 validateRow 拒绝未知字段与服务端专属字段', () => {
   assert.equal(validateRow('courses', { name: 'x', password: 'y' }).ok, false);
   assert.equal(validateRow('tasks', { title: 'x', done: false, id: '00000000-0000-4000-8000-000000000000' }).ok, false);
