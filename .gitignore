@@ -14,3 +14,6 @@ desktop.ini
 
 # 发布产物：由 dev/build-v2.mjs 生成，只用于打包上传
 v2/dist/
+
+# Qoder Sites 描述符：每次 prepare/publish 都会变，内含云端资源 ID 与首页快照，只留本地
+*.qoder.site
