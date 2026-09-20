@@ -141,7 +141,7 @@ export function render(el, params, now = new Date()) {
 
   if (!shown) {
     root.appendChild(renderEmpty({
-      text: filter === 'done' ? '还没有已完成的日程' : '还没有日程，点右下角记一笔',
+      text: filter === 'done' ? '还没有已完成的日程' : '还没有日程',
       actionText: '记一笔',
       onAction: () => openTaskForm({ onSaved: rerender }),
     }));

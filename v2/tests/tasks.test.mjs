@@ -141,6 +141,15 @@ test('空态引导打开新建浮层', () => {
   closeOverlay();
 });
 
+test('空态文案与按钮不重复', () => {
+  globalThis.localStorage = makeStorage();
+  __reset();
+  render(view(), params(), NOW);
+  const text = doc.querySelector('.empty-text').textContent;
+  const btn = doc.querySelector('.empty .btn').textContent;
+  assert.ok(!text.includes(btn), `文案"${text}"不应包含按钮文字"${btn}"`);
+});
+
 test('focus 参数高亮定位', () => {
   seed();
   render(view(), new URLSearchParams('focus=t2'), NOW);
