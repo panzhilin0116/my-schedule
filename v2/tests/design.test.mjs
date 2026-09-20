@@ -1,4 +1,4 @@
-// 视觉重构契约：深色液态玻璃的圆角、材质、过渡时长、配色饱和度，以及「不得出现气象元素」这条红线。
+// 视觉契约：新粗野主义（Neo-Brutalism）——硬边缘、粗边框、硬阴影、高饱和撞色、零圆角。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -13,12 +13,12 @@ function stripComments(text) {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
 
-/** 只按大括号配平切规则；@media / @supports 的头部记进 at，方便区分条件覆盖。 */
 function parseRules(text) {
   const rules = [];
   const stack = [];
   let buf = '';
-  for (const ch of stripComments(text)) {
+  const cleaned = stripComments(text).replace(/@import[^\n]+/g, '');
+  for (const ch of cleaned) {
     if (ch === '{') {
       stack.push(buf.trim());
       buf = '';
@@ -53,15 +53,6 @@ function resolve(value, depth = 0) {
   return resolve(value.replace(/var\(\s*(--[\w-]+)\s*(?:,[^)]*)?\)/g, (_, name) => ROOT_VARS.get(name) ?? ''), depth + 1);
 }
 
-function decl(selector, prop, atIncludes = '') {
-  for (const r of RULES) {
-    if (!r.selectors.includes(selector) || !r.at.includes(atIncludes)) continue;
-    const m = r.body.match(new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`));
-    if (m) return m[1].trim();
-  }
-  return null;
-}
-
 function sourceFiles(dir, exts, out = []) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
@@ -82,66 +73,58 @@ function saturation(hex) {
   return (max - min) / (l > 0.5 ? 2 - max - min : max + min);
 }
 
-test('圆角只有 12/16/20 三档：不允许再混进第三种弧度', () => {
-  assert.equal(ROOT_VARS.get('--r-sm'), '12px');
-  assert.equal(ROOT_VARS.get('--r'), '16px');
-  assert.equal(ROOT_VARS.get('--r-lg'), '20px');
+test('圆角：零圆角为主，token 只有 0px / 2px 两档', () => {
+  assert.equal(ROOT_VARS.get('--r'), '0px');
+  assert.equal(ROOT_VARS.get('--r-sm'), '2px');
 
   const offenders = [];
   for (const r of RULES) {
     for (const d of r.body.match(/border-radius\s*:[^;]+/g) ?? []) {
       const value = d.split(':').slice(1).join(':').trim();
-      if (/inherit|50%|var\(--r/.test(value)) continue; // 圆形标记与胶囊沿用 token，另算
+      if (/var\(--r/.test(value)) continue;
       const px = [...value.matchAll(/(\d+(?:\.\d+)?)px/g)].map((m) => Number(m[1]));
-      for (const v of px) if (v !== 0 && (v < 12 || v > 20)) offenders.push(`${r.selectors[0]} → ${value}`);
-      if (!px.length && value !== '0') offenders.push(`${r.selectors[0]} → ${value}`);
+      for (const v of px) {
+        if (v > 2) offenders.push(`${r.selectors[0]} → ${value}（${v}px 超过 2px）`);
+      }
     }
   }
-  assert.deepEqual(offenders, []);
+  assert.deepEqual(offenders, [], '新粗野主义不允许圆角超过 2px');
 });
 
-test('玻璃面板：半透明填充 + 背景模糊 + 亮边 + 高光，缺一不可', () => {
-  const panels = ['.hm-hero', '.hm-course', '.hm-task', '.tk-row', '.tt-grid', '.seg', '.tt-chip', '.toast', '.overlay-panel', '.rail'];
+test('硬材质：粗边框 + 硬偏移阴影，禁止 backdrop-filter 与渐变背景', () => {
+  const cleanCss = stripComments(css);
+  assert.ok(!cleanCss.includes('backdrop-filter'), '新粗野主义禁止 backdrop-filter');
+
+  const panels = ['.hm-hero', '.hm-course', '.hm-task', '.tk-row', '.tt-grid', '.seg', '.tt-chip', '.toast', '.overlay-panel'];
   const recipe = RULES.find((r) => panels.every((p) => r.selectors.includes(p)));
-  assert.ok(recipe, '面板要共用同一份玻璃配方，而不是各写一套');
+  assert.ok(recipe, '面板要共用同一份硬材质配方');
+  assert.match(recipe.body, /border\s*:\s*var\(--border\)/, '面板用粗边框 token');
+  assert.match(recipe.body, /box-shadow\s*:\s*var\(--shadow\)/, '面板用硬阴影 token');
+  assert.match(resolve(recipe.body.match(/background(?:-color)?\s*:\s*([^;]+)/)[1]), /^#FFFFFF$|^var\(--surface\)$/, '面板白底实心');
 
-  const bg = resolve(recipe.body.match(/background(?:-color)?\s*:\s*([^;]+)/)[1]);
-  const alpha = bg.match(/rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\s*\)/);
-  assert.ok(alpha && Number(alpha[1]) < 0.35, `面板填充要够透：${bg}`);
-  assert.match(resolve(recipe.body.match(/backdrop-filter\s*:\s*([^;]+)/)[1]), /blur\(\d+(\.\d+)?px/);
-  assert.match(recipe.body, /border\s*:\s*1px solid/);
-  assert.match(recipe.body, /box-shadow/);
-
-  // 上表面高光：::before 铺在面板背后，且不能吃掉交互
-  const sheen = RULES.find((r) => r.selectors.some((s) => s.endsWith('::before')) && r.body.includes('var(--sheen)'));
-  assert.ok(sheen && /z-index:\s*-1/.test(sheen.body) && /pointer-events:\s*none/.test(sheen.body));
-
-  for (const bar of ['.topbar', '.tabbar']) {
-    assert.match(decl(bar, 'backdrop-filter') ? resolve(decl(bar, 'backdrop-filter')) : '', /blur\(/, `${bar} 没有背景模糊`);
-  }
+  assert.match(ROOT_VARS.get('--border'), /3px solid/, '主边框 3px 实线');
+  assert.match(ROOT_VARS.get('--shadow'), /\d+px \d+px 0/, '硬阴影零模糊');
 });
 
-test('不支持背景模糊时退回实心面板，玻璃不能退化成透明', () => {
-  const fallback = RULES.filter((r) => r.at.includes('@supports not'));
-  assert.ok(fallback.length >= 2, '缺少 @supports not (backdrop-filter…) 降级块');
-  assert.ok(fallback.some((r) => r.selectors.includes(':root') && /--glass-1/.test(r.body)), '玻璃 token 要有实心兜底');
-  assert.ok(
-    fallback.some((r) => r.selectors.includes('.topbar') && r.selectors.includes('.tabbar') && r.selectors.includes('.overlay-panel')),
-    '贴边条与浮层要一起兜底，否则退化成半透明',
-  );
-  let opaque = 0;
-  for (const r of fallback) {
-    for (const m of r.body.matchAll(/rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\s*\)/g)) {
-      assert.ok(Number(m[1]) >= 0.9, `${r.selectors.join(',')} 的兜底色仍然透明`);
-      opaque += 1;
-    }
+test('强调色高饱和：撞色体系，不是低饱和灰调', () => {
+  for (const token of ['--accent', '--pink', '--yellow', '--green']) {
+    const hex = ROOT_VARS.get(token);
+    assert.match(hex, /^#[0-9a-f]{6}$/i, `${token} 必须是六位十六进制`);
+    const s = saturation(hex);
+    assert.ok(s >= 0.55, `${token} ${hex} 饱和度 ${(s * 100).toFixed(0)}%，不够鲜艳`);
   }
-  assert.ok(opaque >= 4, '兜底块要同时覆盖玻璃 token 与贴边条');
+
+  const sans = ROOT_VARS.get('--sans');
+  assert.match(sans, /Space Grotesk/, '主字体 Space Grotesk');
+  assert.match(sans, /PingFang SC/);
+  assert.match(sans, /Microsoft YaHei/);
 });
 
-test('交互过渡落在 200–400ms，且不用 transition: all', () => {
+test('动效干脆：线性或阶梯过渡，时长 80–250ms，不用缓动曲线', () => {
   const offenders = [];
   let checked = 0;
+  const easingCurves = /cubic-bezier|ease-in(?!-out)|ease-out(?!-in)|ease\b(?!-)/;
+
   for (const r of RULES) {
     for (const d of r.body.match(/transition\s*:[^;]+/g) ?? []) {
       const value = d.split(':').slice(1).join(':');
@@ -150,32 +133,31 @@ test('交互过渡落在 200–400ms，且不用 transition: all', () => {
         for (const [, n, unit] of part.matchAll(/(\d+(?:\.\d+)?)(ms|s)\b/g)) {
           const ms = unit === 's' ? Number(n) * 1000 : Number(n);
           checked += 1;
-          if (ms < 200 || ms > 400) offenders.push(`${r.selectors[0]} → ${part.trim()}`);
+          if (ms < 80 || ms > 250) offenders.push(`${r.selectors[0]} → ${part.trim()}（${ms}ms 不在 80–250ms 区间）`);
+        }
+        if (easingCurves.test(part) && !/linear|steps/.test(part)) {
+          offenders.push(`${r.selectors[0]} → ${part.trim()}（不允许缓动曲线）`);
         }
       }
     }
   }
-  assert.ok(checked >= 20, `只找到 ${checked} 条过渡时长，样式表大概没接上`);
+  assert.ok(checked >= 15, `只找到 ${checked} 条过渡时长，样式表大概没接上`);
   assert.deepEqual(offenders, []);
 });
 
-test('强调色低饱和：不回到霓虹青/霓虹橙，字体走系统无衬线', () => {
-  for (const c of ['#3DD6F5', '#FF8A3D', '#3dd6f5', '#ff8a3d']) {
-    assert.ok(!css.includes(c) && !html.includes(c), `${c} 是 v1 的霓虹色`);
-  }
-  for (const token of ['--accent', '--warn', '--ok', '--danger']) {
-    const hex = ROOT_VARS.get(token);
-    assert.match(hex, /^#[0-9a-f]{6}$/i, `${token} 必须是六位十六进制`);
-    const s = saturation(hex);
-    assert.ok(s <= 0.68, `${token} ${hex} 饱和度 ${(s * 100).toFixed(0)}%，太抢内容`);
-  }
+test('浅色基底：color-scheme: light，波点背景图案', () => {
+  assert.match(css, /color-scheme\s*:\s*light/, 'color-scheme 应为 light');
+  assert.match(css, /radial-gradient\(circle.*0\.8px/, '背景要有波点图案');
+  assert.match(css, /background-size:\s*24px 24px/, '波点间距 24px');
+});
 
-  const sans = ROOT_VARS.get('--sans');
-  assert.match(sans, /-apple-system,\s*BlinkMacSystemFont/);
-  assert.match(sans, /system-ui/);
-  assert.match(sans, /PingFang SC/);
-  assert.match(sans, /Microsoft YaHei/);
-  assert.ok(!/@import|@font-face|fonts\.googleapis/.test(css + html), '不加载网络字体');
+test('按压反馈：:active 位移 + 阴影归零', () => {
+  const btnActive = RULES.find((r) => r.selectors.includes('.btn:active') || r.selectors.includes('.btn'));
+  const hasActivePress = RULES.some((r) => {
+    const sel = r.selectors.join(',');
+    return sel.includes(':active') && r.body.includes('transform') && r.body.includes('box-shadow');
+  });
+  assert.ok(hasActivePress, '交互元素 :active 要有位移 + 阴影归零的按压感');
 });
 
 test('红线：界面里没有任何气象元素', () => {
@@ -188,11 +170,15 @@ test('红线：界面里没有任何气象元素', () => {
     const text = stripComments(readFileSync(f, 'utf8'));
     if (words.test(text) || glyphs.test(text) || cn.test(text)) hits.push(f.slice(V2.length + 1));
   }
-  assert.deepEqual(hits, [], '只允许借鉴 macOS 的材质语言，界面内容不得出现气象元素');
+  assert.deepEqual(hits, [], '界面内容不得出现气象元素');
 
-  // 空态图标必须是中性符号，视图不能再各自覆写
   assert.match(readFileSync(join(V2, 'components', 'emptyState.js'), 'utf8'), /icon\s*=\s*'◇'/);
   for (const v of ['views/home.js', 'views/tasks.js', 'views/timetable.js']) {
     assert.ok(!/icon:\s*'/.test(readFileSync(join(V2, v), 'utf8')), `${v} 不该覆写空态图标`);
   }
+});
+
+test('无障碍降级：prefers-reduced-motion 与 coarse pointer 命中区', () => {
+  assert.ok(css.includes('prefers-reduced-motion'), '缺少动效降级');
+  assert.ok(css.includes('pointer: coarse'), '缺少粗指针命中区放大');
 });
