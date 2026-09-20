@@ -649,6 +649,7 @@ button { font-family: inherit; }
 .tk-main { flex: 1; min-width: 0; cursor: pointer; }
 .tk-title { font-size: 15px; overflow-wrap: anywhere; }
 .tk-meta { font-size: 12px; color: var(--ink-3); margin-top: 3px; font-family: var(--mono); }
+.tk-note-indicator { margin-left: 6px; font-size: 12px; opacity: 0.6; cursor: help; }
 
 .fab {
   position: fixed;

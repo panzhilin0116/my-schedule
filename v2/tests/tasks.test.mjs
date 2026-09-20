@@ -148,6 +148,21 @@ test('focus 参数高亮定位', () => {
   assert.ok(!doc.querySelector('[data-id="t1"]').classList.contains('flash'));
 });
 
+test('备注指示器显示', () => {
+  const withNote = [
+    { id: 'n1', title: '有备注的任务', date: '2026-09-20', note: '这是备注内容', done: false, createdAt: 1 },
+    { id: 'n2', title: '无备注的任务', date: '2026-09-20', done: false, createdAt: 2 },
+  ];
+  globalThis.localStorage = makeStorage({ [STORAGE_KEY]: JSON.stringify(withNote) });
+  __reset();
+  render(view(), params(), NOW);
+  const n1Row = doc.querySelector('[data-id="n1"]');
+  const n2Row = doc.querySelector('[data-id="n2"]');
+  assert.ok(n1Row.querySelector('.tk-note-indicator'), '有备注的任务应显示指示器');
+  assert.equal(n1Row.querySelector('.tk-note-indicator').getAttribute('title'), '这是备注内容');
+  assert.ok(!n2Row.querySelector('.tk-note-indicator'), '无备注的任务不应显示指示器');
+});
+
 test('清理', () => {
   __reset();
 });

@@ -67,7 +67,7 @@ function taskRow(t, now, focusId) {
       },
     }),
     h('div', { class: 'tk-main', onclick: () => openTaskForm({ task: t, onSaved: rerender, onDelete: deleteTask }) },
-      h('div', { class: 'tk-title' }, t.title),
+      h('div', { class: 'tk-title' }, t.title, t.note ? h('span', { class: 'tk-note-indicator', title: t.note }, '📝') : null),
       meta ? h('div', { class: 'tk-meta' }, meta) : null,
     ),
   );
