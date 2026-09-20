@@ -1,0 +1,7 @@
+# 全仓库统一 LF：functions/adapter.mjs 要求与平台文件逐字节一致，
+# registry.mjs 到 web/lib/registry.mjs 也是字节拷贝，不能让 autocrlf 改写。
+* text=auto eol=lf
+
+*.jpg binary
+*.png binary
+*.qoder.site text eol=lf

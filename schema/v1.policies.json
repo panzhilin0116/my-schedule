@@ -1,0 +1,9 @@
+[
+  { "table": "semester_config", "principal": "anonymous", "actions": ["select", "insert", "update", "delete"], "template": "public" },
+  { "table": "courses", "principal": "anonymous", "actions": ["select", "insert", "update", "delete"], "template": "public" },
+  { "table": "tasks", "principal": "anonymous", "actions": ["select", "insert", "update", "delete"], "template": "public" },
+  { "table": "research_projects", "principal": "anonymous", "actions": ["select", "insert", "update", "delete"], "template": "public" },
+  { "table": "milestones", "principal": "anonymous", "actions": ["select", "insert", "update", "delete"], "template": "public" },
+  { "table": "subtasks", "principal": "anonymous", "actions": ["select", "insert", "update", "delete"], "template": "public" },
+  { "table": "workouts", "principal": "anonymous", "actions": ["select", "insert", "update", "delete"], "template": "public" }
+]
