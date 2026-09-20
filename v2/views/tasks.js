@@ -1,5 +1,5 @@
 import { h, mount } from '../lib/dom.js';
-import { loadTasks, toggleTask, removeTask, upsertTask } from '../lib/store.js';
+import { loadTasks, toggleTask, removeTask, upsertTask, StoreError } from '../lib/store.js';
 import { parseDate, dayKey, diffDays, fmtDateCN } from '../lib/time.js';
 import { openTaskForm } from '../components/taskForm.js';
 import { toast } from '../lib/feedback.js';
@@ -61,7 +61,10 @@ function taskRow(t, now, focusId) {
     h('button', {
       class: 'tk-check', type: 'button', role: 'checkbox', 'aria-checked': t.done ? 'true' : 'false',
       'aria-label': t.done ? '标记未完成' : '标记完成',
-      onclick: () => { toggleTask(t.id); rerender(); },
+      onclick: () => {
+        try { toggleTask(t.id); rerender(); }
+        catch (err) { if (err instanceof StoreError) toast(err.message); else throw err; }
+      },
     }),
     h('div', { class: 'tk-main', onclick: () => openTaskForm({ task: t, onSaved: rerender, onDelete: deleteTask }) },
       h('div', { class: 'tk-title' }, t.title),
@@ -73,12 +76,17 @@ function taskRow(t, now, focusId) {
 }
 
 function deleteTask(t) {
-  removeTask(t.id);
-  rerender();
-  toast(`已删除「${t.title}」`, {
-    actionLabel: '撤销',
-    onAction: () => { upsertTask(t); rerender(); },
-  });
+  try {
+    removeTask(t.id);
+    rerender();
+    toast(`已删除「${t.title}」`, {
+      actionLabel: '撤销',
+      onAction: () => { upsertTask(t); rerender(); },
+    });
+  } catch (err) {
+    if (err instanceof StoreError) toast(err.message);
+    else throw err;
+  }
 }
 
 function attachRowSwipe(row, t) {

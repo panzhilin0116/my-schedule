@@ -77,3 +77,25 @@ test('newTaskId 唯一', () => {
   const ids = new Set(Array.from({ length: 200 }, () => newTaskId()));
   assert.equal(ids.size, 200);
 });
+
+test('存储写满（QuotaExceededError）抛 StoreError 而非静默失败', () => {
+  const st = {
+    getItem: () => null,
+    setItem: () => { const e = new Error('QuotaExceededError'); e.name = 'QuotaExceededError'; throw e; },
+    removeItem: () => {},
+  };
+  assert.throws(() => saveTasks([{ id: 'x' }], st), (err) => {
+    assert.ok(err instanceof StoreError);
+    assert.match(err.message, /存储空间已满/);
+    return true;
+  });
+});
+
+test('存储写满（code=22 旧浏览器）也抛 StoreError', () => {
+  const st = {
+    getItem: () => null,
+    setItem: () => { const e = new Error('error'); e.code = 22; throw e; },
+    removeItem: () => {},
+  };
+  assert.throws(() => saveTasks([], st), StoreError);
+});

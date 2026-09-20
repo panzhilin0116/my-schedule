@@ -33,7 +33,14 @@ export function loadTasks(storage) {
 
 export function saveTasks(tasks, storage) {
   const s = backend(storage);
-  s.setItem(STORAGE_KEY, JSON.stringify(tasks));
+  try {
+    s.setItem(STORAGE_KEY, JSON.stringify(tasks));
+  } catch (e) {
+    if (e.name === 'QuotaExceededError' || e.code === 22) {
+      throw new StoreError('本机存储空间已满，请先删除部分日程');
+    }
+    throw new StoreError('保存失败：' + e.message);
+  }
   return tasks;
 }
 

@@ -3,10 +3,11 @@ import {
   coursesOn, currentCourse, nextCourse, courseTimes,
   fmtClock, fmtCountdown, weekOf, addDays, dayKey, diffDays, parseDate,
 } from '../lib/time.js';
-import { loadTasks, toggleTask } from '../lib/store.js';
+import { loadTasks, toggleTask, StoreError } from '../lib/store.js';
 import { openTaskForm } from '../components/taskForm.js';
 import { navigate } from '../lib/router.js';
 import { renderEmpty } from '../components/emptyState.js';
+import { toast } from '../lib/feedback.js';
 
 let ctx = null;
 let heroTimer = null;
@@ -67,7 +68,10 @@ function taskLine(t, now) {
   return h('div', { class: `hm-task${t.done ? ' done' : ''}`, 'data-id': t.id },
     h('button', {
       class: 'tk-check', type: 'button', 'aria-label': t.done ? '标记未完成' : '标记完成',
-      onclick: () => { toggleTask(t.id); rerender(); },
+      onclick: () => {
+        try { toggleTask(t.id); rerender(); }
+        catch (err) { if (err instanceof StoreError) toast(err.message); else throw err; }
+      },
     }),
     h('div', { class: 'tk-main', onclick: () => navigate(`#/tasks?focus=${t.id}`) },
       h('div', { class: 'tk-title' }, t.title),

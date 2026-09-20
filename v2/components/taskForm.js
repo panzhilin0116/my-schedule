@@ -1,6 +1,6 @@
 import { h } from '../lib/dom.js';
-import { openOverlay, closeOverlay } from '../lib/feedback.js';
-import { validateTask, upsertTask, removeTask, newTaskId } from '../lib/store.js';
+import { openOverlay, closeOverlay, toast } from '../lib/feedback.js';
+import { validateTask, upsertTask, removeTask, newTaskId, StoreError } from '../lib/store.js';
 import { dayKey } from '../lib/time.js';
 
 export function openTaskForm({ task, onSaved, onDelete } = {}) {
@@ -70,9 +70,17 @@ export function openTaskForm({ task, onSaved, onDelete } = {}) {
     refresh();
     const { ok } = validateTask(draft);
     if (!ok) { showErrors(); return; }
-    const saved = upsertTask({ ...draft });
-    closeOverlay();
-    onSaved?.(saved, isNew);
+    try {
+      const saved = upsertTask({ ...draft });
+      closeOverlay();
+      onSaved?.(saved, isNew);
+    } catch (err) {
+      if (err instanceof StoreError) {
+        toast(err.message, { duration: 5000 });
+      } else {
+        throw err;
+      }
+    }
   });
 
   const body = h('div', { class: 'task-form-wrap' }, form);
