@@ -87,6 +87,9 @@ function renderTopbar(route) {
   const today = T.todayKey();
   const week = T.weekOf(today, state.config);
   mount(byId('topbar'),
+    // 设置不在导航里（PRD 2.2：从首页右上角齿轮进），窄屏下侧栏是收起的，
+    // 所以齿轮与返回都要放在顶栏，否则进了设置就出不来
+    route.nav === false ? h('a.iconbtn', { href: '#/', 'aria-label': '返回首页', title: '返回首页' }, icon('chevLeft')) : null,
     h('div.titles', h('h1', { text: route.title }), h('span', { text: route.subtitle })),
     h('div.spacer'),
     h('div.clock',
@@ -107,6 +110,9 @@ function renderTopbar(route) {
         render();
       },
     }, icon('refresh')),
+    route.key === 'home' ? h('a.iconbtn.settings-entry', {
+      href: '#/settings', 'aria-label': '设置', title: '设置',
+    }, icon('settings')) : null,
   );
 }
 

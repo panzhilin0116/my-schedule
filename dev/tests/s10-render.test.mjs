@@ -206,6 +206,45 @@ test('S10 C18 延伸：读到数据后同步失败，界面继续可读并当场
   assert.deepEqual(rejections, [], `同步失败期间冒出了未捕获的 Promise 异常：${rejections.join(' | ')}`);
 });
 
+// ── 设置入口（PRD 2.2 移动端）─────────────────────────────
+
+/** 窄屏下 .rail 被 CSS 收起、底部 Tab 只有五个导航页：设置与返回都只能靠页面自己给入口。 */
+test('S10 移动端：设置从首页右上角齿轮进入，进去后还能回到首页', async () => {
+  const server = createPreviewServer({ port: 0 });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const realFetch = globalThis.fetch;
+  try {
+    await withDom(async () => {
+      globalThis.fetch = (input, init) => realFetch(String(input).startsWith('http') ? input : `${origin}${input}`, init);
+      app.start();
+      assert.equal(await waitUntil(() => app.store.state.status === 'ready' && app.store.state.inflight === 0, 9000), true, '外壳没有把数据回读落地');
+
+      await go('#/');
+      const topbar = document.getElementById('topbar');
+      const gear = topbar.querySelector('a[href="#/settings"]');
+      assert.ok(gear, '首页顶栏没有设置入口，窄屏用户到不了设置页');
+      assert.equal(gear.localName, 'a', '入口要能右键/长按开新页，也要进 Tab 序列');
+      const name = (gear.getAttribute('aria-label') ?? '').trim() || (gear.getAttribute('title') ?? '').trim();
+      assert.match(name, /设置/, `齿轮只有图标没有中文名：${name || '（空）'}`);
+      assert.ok(gear.querySelector('svg'), '入口要按 PRD 用齿轮图标呈现');
+      // 齿轮是首页专属：其余页有底部 Tab，不需要重复占位
+      await go('#/tasks');
+      assert.equal(document.getElementById('topbar').querySelector('a[href="#/settings"]'), null, '齿轮只该出现在首页右上角');
+
+      await go('#/settings');
+      assert.equal(topTitle(), '设置');
+      const back = document.getElementById('topbar').querySelector('a[href="#/"]');
+      assert.ok(back, '设置页没有回首页的入口，窄屏进去就出不来');
+      assert.match((back.getAttribute('aria-label') ?? '').trim(), /首页|返回/, `返回键要有中文名：${back.getAttribute('aria-label')}`);
+      assert.ok(document.getElementById('view').querySelector('.panel, .stack, section'), '设置页本身没渲染出内容');
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 // ── 统一加载骨架 ──────────────────────────────────────────
 
 test('S10 加载骨架：首次进入用同一套原语，且不被读屏逐条念出', async () => {
