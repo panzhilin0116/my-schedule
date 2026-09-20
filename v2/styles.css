@@ -836,7 +836,7 @@ input[type="date"], input[type="time"] { color-scheme: dark; font-family: var(--
   .tk-check:active, .btn:active, .fab:active, .tt-block:active, .tabbar .tab:active, .tb-date-btn:active { transform: none; }
 }
 
-/* ---------- 桌面（≥640px）：左侧玻璃导轨 + 顶部水平 Tab ---------- */
+/* ---------- 桌面（≥640px）：左侧玻璃导航栏 ---------- */
 @media (min-width: 640px) {
   :root { --pad: 24px; }
   .rail {
