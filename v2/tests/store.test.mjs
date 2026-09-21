@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   loadTasks, saveTasks, upsertTask, removeTask, toggleTask,
-  validateTask, resetStore, StoreError, STORAGE_KEY, newTaskId,
+  validateTask, resetStore, StoreError, STORAGE_KEY_BASE, newTaskId,
 } from '../lib/store.js';
 
 function fakeStorage(initial) {
@@ -38,15 +38,15 @@ test('upsert / toggle / remove 往返', () => {
 });
 
 test('resetStore 清空', () => {
-  const st = fakeStorage({ [STORAGE_KEY]: JSON.stringify([{ id: 'x' }]) });
+  const st = fakeStorage({ [STORAGE_KEY_BASE]: JSON.stringify([{ id: 'x' }]) });
   resetStore(st);
   assert.deepEqual(loadTasks(st), []);
 });
 
 test('坏 JSON 抛 StoreError', () => {
-  const st = fakeStorage({ [STORAGE_KEY]: '{not json' });
+  const st = fakeStorage({ [STORAGE_KEY_BASE]: '{not json' });
   assert.throws(() => loadTasks(st), StoreError);
-  const st2 = fakeStorage({ [STORAGE_KEY]: '{"a":1}' });
+  const st2 = fakeStorage({ [STORAGE_KEY_BASE]: '{"a":1}' });
   assert.throws(() => loadTasks(st2), StoreError);
 });
 

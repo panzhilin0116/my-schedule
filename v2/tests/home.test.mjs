@@ -12,7 +12,8 @@ function makeStorage(init = {}) {
 }
 globalThis.localStorage = makeStorage();
 
-const { saveTasks, loadTasks, STORAGE_KEY } = await import('../lib/store.js');
+const { saveTasks, loadTasks, STORAGE_KEY_BASE } = await import('../lib/store.js');
+const { getSpaceKey } = await import('../lib/space.js');
 const { render, __tick, __stop } = await import('../views/home.js');
 const { buildMiniCalendar } = await import('../components/miniCalendar.js');
 
@@ -28,7 +29,9 @@ const TASKS = [
 ];
 
 function seed() {
-  globalThis.localStorage = makeStorage({ [STORAGE_KEY]: JSON.stringify(TASKS) });
+  globalThis.localStorage = makeStorage();
+  const scopedKey = getSpaceKey(STORAGE_KEY_BASE);
+  globalThis.localStorage.setItem(scopedKey, JSON.stringify(TASKS));
   __stop();
 }
 
@@ -80,7 +83,7 @@ test('首页勾选完成直接写存储', () => {
   render(view(), new URLSearchParams(), MON_9);
   location.hash = '#/';
   doc.querySelectorAll('.hm-tasks .tk-check')[1].click();
-  assert.equal(loadTasks(globalThis.localStorage).find((t) => t.id === 'h2').done, false);
+  assert.equal(loadTasks().find((t) => t.id === 'h2').done, false);
 });
 
 test('周日无课：Hero 今日无课 + 课程空态', () => {

@@ -8,6 +8,7 @@ const ASSETS = [
   '/lib/feedback.js',
   '/lib/router.js',
   '/lib/store.js',
+  '/lib/space.js',
   '/lib/time.js',
   '/views/home.js',
   '/views/tasks.js',

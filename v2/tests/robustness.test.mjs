@@ -36,7 +36,8 @@ globalThis.window = {
 
 const V2 = join(dirname(fileURLToPath(import.meta.url)), '..');
 const { renderSkeleton } = await import('../components/emptyState.js');
-const { STORAGE_KEY, loadTasks } = await import('../lib/store.js');
+const { STORAGE_KEY_BASE, loadTasks } = await import('../lib/store.js');
+const { getSpaceKey } = await import('../lib/space.js');
 const router = await import('../lib/router.js');
 const tasksView = await import('../views/tasks.js');
 const homeView = await import('../views/home.js');
@@ -54,7 +55,9 @@ function routes() {
 }
 
 test('坏 JSON：整页错误态而不是白屏', () => {
-  globalThis.localStorage = makeStorage({ [STORAGE_KEY]: '{broken' });
+  globalThis.localStorage = makeStorage();
+  const scopedKey = getSpaceKey(STORAGE_KEY_BASE);
+  globalThis.localStorage.setItem(scopedKey, '{broken');
   location.hash = '#/tasks';
   router.defineRoutes(routes());
   router.render();
@@ -67,7 +70,7 @@ test('坏 JSON：整页错误态而不是白屏', () => {
 test('错误态点「清空并重置」：存储清空、页面恢复渲染', () => {
   const resetBtn = view().querySelectorAll('.error-actions .btn').find((b) => b.textContent === '清空并重置');
   resetBtn.click();
-  assert.deepEqual(loadTasks(globalThis.localStorage), []); // 坏数据被清掉，读取不再报错
+  assert.deepEqual(loadTasks(), []); // 坏数据被清掉，读取不再报错
   assert.equal(view().querySelector('.error-state'), null);
   assert.ok(view().querySelector('.empty')); // 空态而非报错
   assert.match(doc.querySelector('#toast-root').textContent, /数据已清空重置/);
@@ -78,9 +81,12 @@ test('多标签页同步：storage 事件后当前页可见新数据', () => {
   location.hash = '#/tasks';
   const stop = router.start(routes());
 
+  // router.start 内部 subscribe → ensureSpace 已创建空间
+  const scopedKey = getSpaceKey(STORAGE_KEY_BASE);
+
   // A 标签页写入（直接改存储），B 标签页收到 storage 事件
-  const crossTab = { key: STORAGE_KEY };
-  globalThis.localStorage.setItem(STORAGE_KEY, JSON.stringify([
+  const crossTab = { key: scopedKey };
+  globalThis.localStorage.setItem(scopedKey, JSON.stringify([
     { id: 'x1', title: '另一页新建的日程', date: '2026-09-21', done: false, createdAt: 1 },
   ]));
   doc.fire('storage', crossTab);
@@ -99,9 +105,11 @@ test('跨零点：makeDayGuard 换 day 才放行', () => {
 });
 
 test('跨零点：visibilitychange 触发整页按新日期重渲染', () => {
-  globalThis.localStorage = makeStorage({ [STORAGE_KEY]: JSON.stringify([
+  globalThis.localStorage = makeStorage();
+  const scopedKey = getSpaceKey(STORAGE_KEY_BASE);
+  globalThis.localStorage.setItem(scopedKey, JSON.stringify([
     { id: 'm1', title: '零点后的今天日程', date: '2026-09-21', done: false, createdAt: 1 },
-  ]) });
+  ]));
   location.hash = '#/';
   const stop = router.start(routes());
   // 注入时刻为 9/20 10:00：这条属于「明天」，只出现在临近日程组，不在今日区

@@ -16,7 +16,8 @@ function makeStorage(init = {}) {
 }
 globalThis.localStorage = makeStorage();
 
-const { saveTasks, loadTasks, STORAGE_KEY } = await import('../lib/store.js');
+const { saveTasks, loadTasks, STORAGE_KEY_BASE } = await import('../lib/store.js');
+const { getSpaceKey } = await import('../lib/space.js');
 const { render, __reset } = await import('../views/tasks.js');
 const { closeOverlay } = await import('../lib/feedback.js');
 
@@ -33,7 +34,9 @@ const SEED = [
 ];
 
 function seed() {
-  globalThis.localStorage = makeStorage({ [STORAGE_KEY]: JSON.stringify(SEED) });
+  globalThis.localStorage = makeStorage();
+  const scopedKey = getSpaceKey(STORAGE_KEY_BASE);
+  globalThis.localStorage.setItem(scopedKey, JSON.stringify(SEED));
   __reset();
 }
 
@@ -53,7 +56,7 @@ test('勾选完成写入存储并换位', () => {
   seed();
   render(view(), params(), NOW);
   doc.querySelector('[data-id="t3"] .tk-check').click();
-  const t3 = loadTasks(globalThis.localStorage).find((t) => t.id === 't3');
+  const t3 = loadTasks().find((t) => t.id === 't3');
   assert.equal(t3.done, false);
   const todayRows = doc.querySelector('.g-today').querySelectorAll('.tk-row');
   assert.deepEqual(todayRows.map((r) => r.getAttribute('data-id')), ['t2', 't3']);
@@ -78,11 +81,11 @@ test('编辑浮层删除 + Toast 撤销恢复', () => {
   doc.querySelector('[data-id="t1"] .tk-main').click();
   assert.equal(doc.querySelector('.overlay-title').textContent, '编辑日程');
   doc.querySelector('.f-delete').click();
-  assert.equal(loadTasks(globalThis.localStorage).find((t) => t.id === 't1'), undefined);
+  assert.equal(loadTasks().find((t) => t.id === 't1'), undefined);
   const undo = doc.querySelector('.toast .toast-action');
   assert.ok(undo);
   undo.click();
-  assert.ok(loadTasks(globalThis.localStorage).find((t) => t.id === 't1'));
+  assert.ok(loadTasks().find((t) => t.id === 't1'));
 });
 
 test('新建：校验、禁用提交、保存成功', () => {
@@ -114,7 +117,7 @@ test('新建：校验、禁用提交、保存成功', () => {
   assert.equal(submit.disabled, false);
   submit.click();
   assert.equal(doc.querySelector('.overlay-panel'), null);
-  const saved = loadTasks(globalThis.localStorage).find((t) => t.title === '开组会');
+  const saved = loadTasks().find((t) => t.title === '开组会');
   assert.ok(saved);
   assert.equal(saved.startTime, '14:00');
   assert.equal(saved.date, '2026-09-20');
@@ -126,7 +129,7 @@ test('左滑条目触发删除', () => {
   const row = doc.querySelector('[data-id="t5"]');
   row.fire('touchstart', { touches: [{ clientX: 300 }] });
   row.fire('touchend', { changedTouches: [{ clientX: 200 }] });
-  assert.equal(loadTasks(globalThis.localStorage).find((t) => t.id === 't5'), undefined);
+  assert.equal(loadTasks().find((t) => t.id === 't5'), undefined);
   assert.ok(doc.querySelector('.toast'));
   closeOverlay();
 });
@@ -162,7 +165,9 @@ test('备注指示器显示', () => {
     { id: 'n1', title: '有备注的任务', date: '2026-09-20', note: '这是备注内容', done: false, createdAt: 1 },
     { id: 'n2', title: '无备注的任务', date: '2026-09-20', done: false, createdAt: 2 },
   ];
-  globalThis.localStorage = makeStorage({ [STORAGE_KEY]: JSON.stringify(withNote) });
+  globalThis.localStorage = makeStorage();
+  const scopedKey = getSpaceKey(STORAGE_KEY_BASE);
+  globalThis.localStorage.setItem(scopedKey, JSON.stringify(withNote));
   __reset();
   render(view(), params(), NOW);
   const n1Row = doc.querySelector('[data-id="n1"]');

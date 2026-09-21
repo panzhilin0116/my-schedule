@@ -114,6 +114,24 @@ button { font-family: inherit; cursor: pointer; }
 }
 .topbar .tb-date { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--ink); }
 .topbar .tb-week { color: var(--accent); font-weight: 700; }
+.topbar .tb-space {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 12px; font-weight: 700;
+}
+.topbar .tb-space-label { color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.topbar .tb-space-id {
+  background: var(--surface); border: var(--border-thin); border-radius: var(--r);
+  padding: 2px 8px; color: var(--accent); box-shadow: var(--shadow-sm);
+}
+.topbar .tb-space-new {
+  width: 24px; height: 24px; display: grid; place-items: center;
+  background: var(--pink); color: var(--surface); border: var(--border-thin);
+  border-radius: var(--r); font-size: 16px; font-weight: 700; cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur) linear, box-shadow var(--dur) linear;
+}
+.topbar .tb-space-new:hover { background: #E0265E; }
+.topbar .tb-space-new:active { transform: translate(2px, 2px); box-shadow: none; }
 
 /* ---------- 底部导航（手机） ---------- */
 .tabbar {

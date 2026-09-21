@@ -66,7 +66,7 @@ function taskRow(t, now, focusId) {
         catch (err) { if (err instanceof StoreError) toast(err.message); else throw err; }
       },
     }),
-    h('div', { class: 'tk-main', onclick: () => openTaskForm({ task: t, onSaved: rerender, onDelete: deleteTask }) },
+    h('div', { class: 'tk-main', onclick: () => openTaskForm({ task: t, onSaved: rerender, onDelete: deleteTask, now: ctx.now }) },
       h('div', { class: 'tk-title' }, t.title, t.note ? h('span', { class: 'tk-note-indicator', title: t.note }, '📝') : null),
       meta ? h('div', { class: 'tk-meta' }, meta) : null,
     ),
@@ -101,11 +101,11 @@ function attachRowSwipe(row, t) {
 }
 
 function rerender() {
-  if (ctx) render(ctx.el, ctx.params, new Date());
+  if (ctx) render(ctx.el, ctx.params, ctx.now);
 }
 
 export function render(el, params, now = new Date()) {
-  ctx = { el, params };
+  ctx = { el, params, now };
   const focusId = params?.get?.('focus') ?? null;
   let tasks = loadTasks();
   if (filter === 'open') tasks = tasks.filter((t) => !t.done);
@@ -143,13 +143,13 @@ export function render(el, params, now = new Date()) {
     root.appendChild(renderEmpty({
       text: filter === 'done' ? '还没有已完成的日程' : '还没有日程',
       actionText: '记一笔',
-      onAction: () => openTaskForm({ onSaved: rerender }),
+      onAction: () => openTaskForm({ onSaved: rerender, now: ctx.now }),
     }));
   }
 
   root.appendChild(h('button', {
     class: 'fab', type: 'button', 'aria-label': '新建日程',
-    onclick: () => openTaskForm({ onSaved: rerender }),
+    onclick: () => openTaskForm({ onSaved: rerender, now: ctx.now }),
   }, '＋'));
 
   mount(el, root);

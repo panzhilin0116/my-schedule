@@ -3,12 +3,12 @@ import { openOverlay, closeOverlay, toast } from '../lib/feedback.js';
 import { validateTask, upsertTask, removeTask, newTaskId, StoreError } from '../lib/store.js';
 import { dayKey } from '../lib/time.js';
 
-export function openTaskForm({ task, onSaved, onDelete } = {}) {
+export function openTaskForm({ task, onSaved, onDelete, now } = {}) {
   const isNew = !task;
   const draft = {
     id: isNew ? newTaskId() : task.id,
     title: task?.title ?? '',
-    date: task?.date ?? dayKey(new Date()),
+    date: task?.date ?? dayKey(now || new Date()),
     startTime: task?.startTime ?? '',
     endTime: task?.endTime ?? '',
     location: task?.location ?? '',

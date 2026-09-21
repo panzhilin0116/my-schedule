@@ -90,12 +90,12 @@ function sortTasks(list) {
 }
 
 function rerender() {
-  if (ctx) render(ctx.el, ctx.params, new Date());
+  if (ctx) render(ctx.el, ctx.params, ctx.now);
 }
 
 export function render(el, params, now = new Date()) {
   stop();
-  ctx = { el, params };
+  ctx = { el, params, now };
   const tasks = loadTasks();
   const todayKey = dayKey(now);
   const todayTasks = sortTasks(tasks.filter((t) => t.date === todayKey));
@@ -122,11 +122,11 @@ export function render(el, params, now = new Date()) {
     h('section', { class: 'hm-section' },
       h('div', { class: 'hm-h-row' },
         h('h2', { class: 'hm-h' }, `今日日程${todayTasks.length ? ` (${todayTasks.length})` : ''}`),
-        h('button', { class: 'btn hm-add', type: 'button', onclick: () => openTaskForm({ onSaved: rerender }) }, '＋'),
+        h('button', { class: 'btn hm-add', type: 'button', onclick: () => openTaskForm({ onSaved: rerender, now: ctx.now }) }, '＋'),
       ),
       todayTasks.length
         ? h('div', { class: 'hm-tasks' }, ...todayTasks.map((t) => taskLine(t, now)))
-        : renderEmpty({ text: '今天没有日程', actionText: '记一笔', onAction: () => openTaskForm({ onSaved: rerender }) }),
+        : renderEmpty({ text: '今天没有日程', actionText: '记一笔', onAction: () => openTaskForm({ onSaved: rerender, now: ctx.now }) }),
     ),
   );
 

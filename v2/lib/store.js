@@ -1,10 +1,18 @@
-export const STORAGE_KEY = 'schedule.tasks.v1';
+import { getSpaceKey } from './space.js';
+
+export const STORAGE_KEY_BASE = 'schedule.tasks.v1';
 
 export class StoreError extends Error {
   constructor(message) {
     super(message);
     this.name = 'StoreError';
   }
+}
+
+function storageKey(storage) {
+  // 测试模式：传入自定义 storage 时，直接用 base key（不隔离空间）
+  if (storage !== undefined) return STORAGE_KEY_BASE;
+  return getSpaceKey(STORAGE_KEY_BASE);
 }
 
 function backend(storage) {
@@ -19,7 +27,7 @@ export function newTaskId() {
 
 export function loadTasks(storage) {
   const s = backend(storage);
-  const raw = s.getItem(STORAGE_KEY);
+  const raw = s.getItem(storageKey(storage));
   if (raw == null) return [];
   let parsed;
   try {
@@ -34,7 +42,7 @@ export function loadTasks(storage) {
 export function saveTasks(tasks, storage) {
   const s = backend(storage);
   try {
-    s.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    s.setItem(storageKey(storage), JSON.stringify(tasks));
   } catch (e) {
     if (e.name === 'QuotaExceededError' || e.code === 22) {
       throw new StoreError('本机存储空间已满，请先删除部分日程');
@@ -99,8 +107,9 @@ export function validateTask(draft) {
 
 export function subscribe(cb) {
   if (typeof window === 'undefined' || !window.addEventListener) return () => {};
+  const key = storageKey();
   const handler = (e) => {
-    if (e.key === STORAGE_KEY || e.key === null) cb(loadTasks());
+    if (e.key === key || e.key === null) cb(loadTasks());
   };
   window.addEventListener('storage', handler);
   return () => window.removeEventListener('storage', handler);
