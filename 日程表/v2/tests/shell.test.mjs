@@ -63,6 +63,16 @@ test('顶栏显示日期与周次', () => {
   assert.match(text, /第2周/);
 });
 
+test('新建空间确认文案如实告知数据会被清空', () => {
+  const msgs = [];
+  globalThis.confirm = (m) => { msgs.push(m); return false; }; // 永不真正新建
+  renderTopbar(new Date(2026, 8, 20));
+  document.querySelector('.tb-space-new').click();
+  assert.equal(msgs.length, 1);
+  assert.match(msgs[0], /清空/);
+  assert.doesNotMatch(msgs[0], /保留|切换回来/);
+});
+
 test('浮层打开/关闭/Esc', () => {
   const body = document.createElement('div');
   body.textContent = '表单内容';

@@ -55,9 +55,9 @@ export function renderTopbar(now = new Date()) {
     h('button', {
       class: 'tb-space-new',
       type: 'button',
-      title: '新建空间（当前数据将保留，但会切换到全新空间）',
+      title: '新建空间（清空当前空间的日程与课程，切换到全新空白空间）',
       onclick: () => {
-        if (confirm('新建空间后，当前数据会保留在旧空间中。你可以随时切换回来。确定新建？')) {
+        if (confirm('新建空间将清空当前空间的日程与课程，并切换到全新的空白空间。此操作无法找回旧空间的数据（其他空间不受影响）。确定新建？')) {
           resetSpace();
           location.reload();
         }
