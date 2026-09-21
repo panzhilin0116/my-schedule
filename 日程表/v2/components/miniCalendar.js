@@ -1,7 +1,8 @@
 import { h, qs } from '../lib/dom.js';
 import { openOverlay, closeOverlay } from '../lib/feedback.js';
-import { COURSES } from '../data/courses.js';
-import { weekOf, dayKey } from '../lib/time.js';
+import { loadCourses } from '../lib/courseStore.js';
+import { weekOf, dayKey, parseDate, addDays } from '../lib/time.js';
+import { SEMESTER } from '../data/semester.js';
 import { loadTasks } from '../lib/store.js';
 
 const CELL_LABELS = ['一', '二', '三', '四', '五', '六', '日'];
@@ -16,11 +17,12 @@ function monthMatrix(year, month /* 0-based */) {
   return cells;
 }
 
-function renderCalendarBody(viewDate, taskDates, onNavigate) {
+function renderCalendarBody(viewDate, taskDates, courses, onNavigate) {
   const courseDays = new Set();
-  for (const c of COURSES) {
-    for (let w = 0; w < 14; w += 1) {
-      const d = new Date(2026, 8, 7 + (c.day - 1) + w * 7);
+  const week1 = parseDate(SEMESTER.week1Monday);
+  for (const c of courses) {
+    for (let w = 0; w < SEMESTER.totalWeeks; w += 1) {
+      const d = addDays(week1, c.day - 1 + w * 7);
       if (d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear()) {
         courseDays.add(d.getDate());
       }
@@ -66,24 +68,26 @@ function renderCalendarBody(viewDate, taskDates, onNavigate) {
   );
 }
 
-export function buildMiniCalendar(viewDate = new Date(), taskDates = null) {
+export function buildMiniCalendar(viewDate = new Date(), taskDates = null, courses = null) {
   const dates = taskDates ?? new Set(loadTasks().map((t) => t.date));
-  return renderCalendarBody(viewDate, dates, () => {});
+  const courseList = courses ?? loadCourses();
+  return renderCalendarBody(viewDate, dates, courseList, () => {});
 }
 
 export function openMiniCalendar(now = new Date()) {
   let viewDate = new Date(now.getFullYear(), now.getMonth(), 1);
   const taskDates = new Set(loadTasks().map((t) => t.date));
+  const courses = loadCourses();
 
   function navigate(newDate) {
     viewDate = newDate;
-    const newBody = renderCalendarBody(viewDate, taskDates, navigate);
+    const newBody = renderCalendarBody(viewDate, taskDates, courses, navigate);
     const overlayBody = qs('.overlay-body');
     if (overlayBody && overlayBody.firstChild) {
       overlayBody.replaceChild(newBody, overlayBody.firstChild);
     }
   }
 
-  const body = renderCalendarBody(viewDate, taskDates, navigate);
+  const body = renderCalendarBody(viewDate, taskDates, courses, navigate);
   return openOverlay({ title: '校历月历', body });
 }

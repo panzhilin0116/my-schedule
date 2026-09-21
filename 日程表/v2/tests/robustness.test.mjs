@@ -163,11 +163,12 @@ test('首屏骨架：index.html 的 #view 自带骨架，首次渲染即被替�
 test('Service Worker：sw.js 存在且缓存清单完整', () => {
   const swPath = join(V2, 'sw.js');
   const swSrc = readFileSync(swPath, 'utf8');
-  assert.match(swSrc, /const CACHE = ['"]schedule-v1['"]/);
+  assert.match(swSrc, /const CACHE = ['"]schedule-v2['"]/);
   assert.match(swSrc, /ASSETS\s*=\s*\[/);
-  for (const asset of ['/index.html', '/styles.css', '/main.js', '/lib/dom.js', '/views/home.js']) {
+  for (const asset of ['/index.html', '/styles.css', '/main.js', '/lib/dom.js', '/views/home.js', '/lib/space.js', '/lib/courseStore.js', '/components/courseForm.js']) {
     assert.ok(swSrc.includes(asset), `sw.js 缓存清单缺 ${asset}`);
   }
+  assert.ok(!swSrc.includes('/data/courses.js'), 'sw.js 不应再缓存已删除的预置课表');
   assert.match(swSrc, /self\.addEventListener\('install'/);
   assert.match(swSrc, /self\.addEventListener\('fetch'/);
   const mainSrc = readFileSync(join(V2, 'main.js'), 'utf8');

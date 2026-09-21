@@ -1,4 +1,4 @@
-const CACHE = 'schedule-v1';
+const CACHE = 'schedule-v2';
 const ASSETS = [
   '/',
   '/index.html',
@@ -7,17 +7,18 @@ const ASSETS = [
   '/lib/dom.js',
   '/lib/feedback.js',
   '/lib/router.js',
-  '/lib/store.js',
   '/lib/space.js',
+  '/lib/store.js',
+  '/lib/courseStore.js',
   '/lib/time.js',
   '/views/home.js',
   '/views/tasks.js',
   '/views/timetable.js',
   '/components/courseDetail.js',
+  '/components/courseForm.js',
   '/components/emptyState.js',
   '/components/miniCalendar.js',
   '/components/taskForm.js',
-  '/data/courses.js',
   '/data/semester.js',
 ];
 

@@ -13,7 +13,9 @@ function makeStorage(init = {}) {
 globalThis.localStorage = makeStorage();
 
 const { saveTasks, loadTasks, STORAGE_KEY_BASE } = await import('../lib/store.js');
+const { COURSE_KEY_BASE } = await import('../lib/courseStore.js');
 const { getSpaceKey } = await import('../lib/space.js');
+const { FIX_COURSES } = await import('./course-fixture.mjs');
 const { render, __tick, __stop } = await import('../views/home.js');
 const { buildMiniCalendar } = await import('../components/miniCalendar.js');
 
@@ -30,8 +32,8 @@ const TASKS = [
 
 function seed() {
   globalThis.localStorage = makeStorage();
-  const scopedKey = getSpaceKey(STORAGE_KEY_BASE);
-  globalThis.localStorage.setItem(scopedKey, JSON.stringify(TASKS));
+  globalThis.localStorage.setItem(getSpaceKey(STORAGE_KEY_BASE), JSON.stringify(TASKS));
+  globalThis.localStorage.setItem(getSpaceKey(COURSE_KEY_BASE), JSON.stringify(FIX_COURSES));
   __stop();
 }
 
@@ -95,7 +97,7 @@ test('周日无课：Hero 今日无课 + 课程空态', () => {
 
 test('迷你月历：有课/有日程标记与今日框', () => {
   seed();
-  const cal = buildMiniCalendar(new Date(2026, 8, 15), new Set(['2026-09-07', '2026-09-21']));
+  const cal = buildMiniCalendar(new Date(2026, 8, 15), new Set(['2026-09-07', '2026-09-21']), FIX_COURSES);
   const d7 = cal.querySelector('[data-day="2026-09-07"]');
   assert.ok(d7.querySelector('.cal-dot--course'));
   assert.ok(d7.querySelector('.cal-dot--task'));

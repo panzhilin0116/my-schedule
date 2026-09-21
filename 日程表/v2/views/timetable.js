@@ -1,10 +1,14 @@
 import { h, mount } from '../lib/dom.js';
 import {
-  COURSES, PERIODS, weekOf, rawWeekNumber, weekdayOf, courseTimes,
+  PERIODS, weekOf, rawWeekNumber, weekdayOf, courseTimes,
   weekMonday, addDays,
 } from '../lib/time.js';
 import { WEEK_LABELS } from '../data/semester.js';
 import { openCourseDetail } from '../components/courseDetail.js';
+import { openCourseForm } from '../components/courseForm.js';
+import { loadCourses, removeCourse, upsertCourse } from '../lib/courseStore.js';
+import { renderEmpty } from '../components/emptyState.js';
+import { closeOverlay, toast } from '../lib/feedback.js';
 
 const ROW_H = 46;
 const HEAD_H = 34;
@@ -38,6 +42,16 @@ function weekRangeLabel(now) {
   return ` · ${monday.getMonth() + 1}/${monday.getDate()}-${sunday.getMonth() + 1}/${sunday.getDate()}`;
 }
 
+function deleteCourse(course) {
+  removeCourse(course.id);
+  closeOverlay();
+  toast(`已删除「${course.name}」`, {
+    actionLabel: '撤销',
+    onAction: () => { upsertCourse(course); rerender(); },
+  });
+  rerender();
+}
+
 function courseBlock(course, now, desktop) {
   const { start, end } = courseTimes(course, now);
   const living = start <= now && now < end;
@@ -48,14 +62,17 @@ function courseBlock(course, now, desktop) {
       'data-course': course.name,
       'aria-label': `${course.name} ${WEEK_LABELS[course.day - 1]} 第${course.startSection}-${course.endSection}节`,
       style: `grid-column:${desktop ? course.day + 1 : 2};grid-row:${course.startSection + 1} / span ${course.endSection - course.startSection + 1};`,
-      onclick: () => openCourseDetail(course),
+      onclick: () => openCourseDetail(course, {
+        onEdit: () => openCourseForm({ course, onSaved: rerender }),
+        onDelete: () => deleteCourse(course),
+      }),
     },
     h('span', { class: 'tt-name' }, course.name),
     course.room ? h('span', { class: 'tt-room' }, course.room) : null,
   );
 }
 
-function gridBody(now, desktop, week) {
+function gridBody(now, desktop, week, courses) {
   const days = desktop ? [1, 2, 3, 4, 5, 6, 7] : [selectedDay];
   const today = weekdayOf(now);
   const body = h('div', { class: 'tt-grid', style: `grid-template-columns:56px repeat(${days.length}, minmax(0,1fr));` },
@@ -70,12 +87,12 @@ function gridBody(now, desktop, week) {
     ...days.map((d) => h('div', { class: 'tt-daycol', style: `grid-column:${desktop ? d + 1 : 2};grid-row:2 / span 14;` })),
   );
   if (week !== null) {
-    for (const c of COURSES) {
-      if (!days.includes(c.day)) continue;
+    for (const c of courses) {
+      if (!days.includes(Number(c.day))) continue;
       body.appendChild(courseBlock(c, now, desktop));
     }
     // 手机单日轴下选到空白天，给一条明确的空态提示，避免整屏只剩时间轴。
-    if (!desktop && !COURSES.some((c) => c.day === selectedDay)) {
+    if (!desktop && !courses.some((c) => Number(c.day) === selectedDay)) {
       body.appendChild(h('div', { class: 'tt-empty', style: 'grid-column:2;grid-row:2 / span 3;' }, '当天没有课'));
     }
   }
@@ -112,16 +129,17 @@ function scheduleTick(root) {
 }
 
 function rerender() {
-  if (ctx) render(ctx.el, ctx.params, new Date());
+  if (ctx) render(ctx.el, ctx.params, ctx.now);
 }
 
 export function render(el, params, now = new Date()) {
   stopTimers();
-  ctx = { el, params };
+  ctx = { el, params, now };
   const desktop = isDesktop();
   const week = weekOf(now);
   const today = weekdayOf(now);
   if (selectedDay === null) selectedDay = today;
+  const courses = loadCourses();
 
   const root = h('div', { class: 'tt' });
   root.appendChild(
@@ -129,26 +147,39 @@ export function render(el, params, now = new Date()) {
       h('h1', { class: 'tt-title' }, '课表'),
       h('span', { class: 'tt-week' }, week === null ? `非教学周（第${rawWeekNumber(now)}周）` : `第${week}周${weekRangeLabel(now)}`),
       h('button', { class: 'btn tt-today-btn', type: 'button', onclick: () => { selectedDay = weekdayOf(new Date()); rerender(); } }, '今天'),
+      h('button', { class: 'btn tt-add-btn', type: 'button', onclick: () => openCourseForm({ onSaved: rerender }) }, '＋ 添加课程'),
     ),
   );
   if (week === null) {
     root.appendChild(h('div', { class: 'tt-banner' }, `本周无教学安排（第${rawWeekNumber(now)}周）`));
+    root.appendChild(renderEmpty({
+      text: '假期里也要上课？提前把下学期的课加进来',
+      actionText: '添加课程',
+      onAction: () => openCourseForm({ onSaved: rerender }),
+    }));
+  } else if (!courses.length) {
+    root.appendChild(renderEmpty({
+      text: '这个空间的课表还是空的，先把你自己的课加进来',
+      actionText: '添加第一节课',
+      onAction: () => openCourseForm({ onSaved: rerender }),
+    }));
+  } else {
+    if (!desktop) {
+      root.appendChild(
+        h('div', { class: 'tt-chips', role: 'tablist' },
+          ...[1, 2, 3, 4, 5, 6, 7].map((d) => h(
+            'button', {
+              class: `tt-chip${d === selectedDay ? ' active' : ''}${d === today ? ' istoday' : ''}`,
+              type: 'button', role: 'tab', 'aria-selected': d === selectedDay ? 'true' : 'false',
+              onclick: () => { selectedDay = d; rerender(); },
+            }, WEEK_LABELS[d - 1].slice(1),
+          ))),
+      );
+    }
+    const body = gridBody(now, desktop, week, courses);
+    if (!desktop) attachSwipe(body);
+    root.appendChild(body);
   }
-  if (!desktop) {
-    root.appendChild(
-      h('div', { class: 'tt-chips', role: 'tablist' },
-        ...[1, 2, 3, 4, 5, 6, 7].map((d) => h(
-          'button', {
-            class: `tt-chip${d === selectedDay ? ' active' : ''}${d === today ? ' istoday' : ''}`,
-            type: 'button', role: 'tab', 'aria-selected': d === selectedDay ? 'true' : 'false',
-            onclick: () => { selectedDay = d; rerender(); },
-          }, WEEK_LABELS[d - 1].slice(1),
-        ))),
-    );
-  }
-  const body = gridBody(now, desktop, week);
-  if (!desktop) attachSwipe(body);
-  root.appendChild(body);
   mount(el, root);
   scheduleTick(root);
   return root;

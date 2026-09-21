@@ -422,6 +422,8 @@ button { font-family: inherit; cursor: pointer; }
   box-shadow: var(--shadow-sm);
 }
 .tt-today-btn { margin-left: auto; padding: 6px 14px; font-size: 13px; }
+.tt-add-btn { padding: 6px 14px; font-size: 13px; background: var(--pink); color: var(--surface); border-color: var(--ink); }
+.tt-add-btn:hover { background: #E0265E; }
 .tt-banner {
   background: var(--yellow);
   border: var(--border);
@@ -677,6 +679,39 @@ button { font-family: inherit; cursor: pointer; }
 .f-submit { margin-top: 4px; width: 100%; }
 .f-delete { margin-top: 8px; width: 100%; }
 input[type="date"], input[type="time"] { font-family: var(--mono); }
+
+/* ---------- 课程表单 / 课程详情 ---------- */
+.f-row select {
+  background: var(--surface);
+  border: var(--border);
+  border-radius: var(--r);
+  color: var(--ink);
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 500;
+  width: 100%;
+  box-shadow: var(--shadow-sm);
+}
+.f-row select:hover { background: var(--bg-alt); }
+.f-row select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-accent);
+}
+.cf-dots { display: flex; gap: 8px; }
+.cf-dot {
+  width: 28px; height: 28px;
+  border: var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  padding: 0;
+}
+.cf-dot:active { transform: translate(2px, 2px); box-shadow: none; }
+.cf-dot.active { outline: 2px solid var(--ink); outline-offset: 2px; }
+.cd-actions { display: flex; gap: 10px; margin-top: 14px; }
+.cd-actions .btn { flex: 1; }
 
 /* ---------- 首页 ---------- */
 .home { display: flex; flex-direction: column; gap: 22px; animation: view-in var(--dur-slow) steps(8); }

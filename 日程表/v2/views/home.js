@@ -4,6 +4,7 @@ import {
   fmtClock, fmtCountdown, weekOf, addDays, dayKey, diffDays, parseDate,
 } from '../lib/time.js';
 import { loadTasks, toggleTask, StoreError } from '../lib/store.js';
+import { loadCourses } from '../lib/courseStore.js';
 import { openTaskForm } from '../components/taskForm.js';
 import { navigate } from '../lib/router.js';
 import { renderEmpty } from '../components/emptyState.js';
@@ -16,13 +17,13 @@ function stop() {
   if (heroTimer) { clearInterval(heroTimer); heroTimer = null; }
 }
 
-function heroContent(now) {
-  const courses = coursesOn(now);
-  if (!courses.length) {
+function heroContent(now, courses) {
+  const today = coursesOn(now, courses);
+  if (!today.length) {
     return h('div', { class: 'hm-hero hm-hero--idle' }, h('div', { class: 'hm-hero-big' }, weekOf(now) === null ? '假期中 · 今日无课' : '今日无课'));
   }
-  const cur = currentCourse(now, now);
-  const nx = nextCourse(now, now);
+  const cur = currentCourse(now, now, courses);
+  const nx = nextCourse(now, now, courses);
   if (cur && !nx) {
     return h('div', { class: 'hm-hero hm-hero--live' },
       h('div', { class: 'hm-hero-kicker' }, '正在上课'),
@@ -46,7 +47,7 @@ function updateHero(now = new Date()) {
   if (!root) return;
   const slot = root.querySelector('.hm-hero-slot');
   if (!slot) return;
-  mount(slot, heroContent(now));
+  mount(slot, heroContent(now, ctx.courses));
 }
 
 function courseRow(course, now) {
@@ -95,7 +96,7 @@ function rerender() {
 
 export function render(el, params, now = new Date()) {
   stop();
-  ctx = { el, params, now };
+  ctx = { el, params, now, courses: loadCourses() };
   const tasks = loadTasks();
   const todayKey = dayKey(now);
   const todayTasks = sortTasks(tasks.filter((t) => t.date === todayKey));
@@ -106,9 +107,9 @@ export function render(el, params, now = new Date()) {
     .sort((a, b) => a.d - b.d || ((a.t.startTime || '99:99') < (b.t.startTime || '99:99') ? -1 : 1));
 
   const root = h('div', { class: 'home' });
-  root.appendChild(h('div', { class: 'hm-hero-slot' }, heroContent(now)));
+  root.appendChild(h('div', { class: 'hm-hero-slot' }, heroContent(now, ctx.courses)));
 
-  const courses = coursesOn(now);
+  const courses = coursesOn(now, ctx.courses);
   root.appendChild(
     h('section', { class: 'hm-section' },
       h('h2', { class: 'hm-h' }, '今日课程'),

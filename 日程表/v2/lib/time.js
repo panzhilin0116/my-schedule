@@ -1,5 +1,4 @@
 import { SEMESTER, PERIODS, WEEK_LABELS } from '../data/semester.js';
-import { COURSES } from '../data/courses.js';
 
 const MS_DAY = 86400000;
 
@@ -78,23 +77,23 @@ export function courseTimes(course, date) {
   return { start: atTime(day, PERIODS[course.startSection - 1].start), end: atTime(day, PERIODS[course.endSection - 1].end) };
 }
 
-export function coursesOn(date) {
+export function coursesOn(date, courses = []) {
   if (!isTeachingWeek(date)) return [];
   const wd = weekdayOf(date);
-  return COURSES.filter((c) => c.day === wd).sort((a, b) => a.startSection - b.startSection);
+  return courses.filter((c) => Number(c.day) === wd).sort((a, b) => a.startSection - b.startSection);
 }
 
-export function currentCourse(date, now) {
-  for (const c of coursesOn(date)) {
+export function currentCourse(date, now, courses = []) {
+  for (const c of coursesOn(date, courses)) {
     const { start, end } = courseTimes(c, date);
     if (start <= now && now < end) return c;
   }
   return null;
 }
 
-export function nextCourse(date, now) {
+export function nextCourse(date, now, courses = []) {
   let best = null;
-  for (const c of coursesOn(date)) {
+  for (const c of coursesOn(date, courses)) {
     const { start } = courseTimes(c, date);
     if (start > now && (!best || start < best.at)) best = { course: c, at: start };
   }
@@ -125,4 +124,4 @@ export function weekLabel(date) {
   return w === null ? '非教学周' : `第${w}周`;
 }
 
-export { COURSES, PERIODS, SEMESTER, WEEK_LABELS };
+export { PERIODS, SEMESTER, WEEK_LABELS };
