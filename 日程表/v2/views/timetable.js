@@ -43,13 +43,17 @@ function weekRangeLabel(now) {
 }
 
 function deleteCourse(course) {
-  removeCourse(course.id);
-  closeOverlay();
+  rerender();
   toast(`已删除「${course.name}」`, {
     actionLabel: '撤销',
     onAction: () => { upsertCourse(course); rerender(); },
   });
-  rerender();
+}
+
+function confirmDeleteCourse(course) {
+  removeCourse(course.id);
+  closeOverlay();
+  deleteCourse(course);
 }
 
 function courseBlock(course, now, desktop) {
@@ -63,8 +67,8 @@ function courseBlock(course, now, desktop) {
       'aria-label': `${course.name} ${WEEK_LABELS[course.day - 1]} 第${course.startSection}-${course.endSection}节`,
       style: `grid-column:${desktop ? course.day + 1 : 2};grid-row:${course.startSection + 1} / span ${course.endSection - course.startSection + 1};`,
       onclick: () => openCourseDetail(course, {
-        onEdit: () => openCourseForm({ course, onSaved: rerender }),
-        onDelete: () => deleteCourse(course),
+        onEdit: () => openCourseForm({ course, onSaved: rerender, onDelete: deleteCourse }),
+        onDelete: () => confirmDeleteCourse(course),
       }),
     },
     h('span', { class: 'tt-name' }, course.name),

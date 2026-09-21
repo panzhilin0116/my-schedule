@@ -218,6 +218,23 @@ test('编辑课程：保存后写回存储', () => {
   assert.equal(c4.room, '操场');
 });
 
+test('编辑浮层内删除：界面即时更新且可撤销', () => {
+  seedCourses();
+  setDesktop(true);
+  render(view(), new URLSearchParams(), MON_9);
+  doc.querySelector('[data-course="体育(1)"]').click();
+  doc.querySelector('.cd-actions .btn.primary').click();
+  doc.querySelector('.f-delete').click();
+  assert.equal(loadCourses().find((c) => c.id === 'c4'), undefined);
+  assert.equal(doc.querySelectorAll('.tt-block').length, 11); // 无陈旧块
+  const undo = doc.querySelector('.toast .toast-action');
+  assert.ok(undo, '表单删除也要给撤销 Toast');
+  undo.click();
+  assert.ok(loadCourses().find((c) => c.id === 'c4'));
+  assert.equal(doc.querySelectorAll('.tt-block').length, 12);
+  closeOverlay();
+});
+
 test('课程数据不跨空间：另一空间读到空白', () => {
   seedCourses();
   setDesktop(true);
