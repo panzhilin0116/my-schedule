@@ -1,4 +1,4 @@
-const CACHE = 'schedule-v2';
+const CACHE = 'schedule-v3';
 const ASSETS = [
   '/',
   '/index.html',
