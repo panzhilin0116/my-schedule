@@ -137,7 +137,9 @@ test('断网纯前端：v2 源码不含 fetch/XHR/网络接口调用', () => {
     for (const name of readdirSync(join(V2, d))) files.push(join(V2, d, name));
   }
   files.push(join(V2, 'main.js'), join(V2, 'index.html'));
-  const pattern = /\bfetch\s*\(|XMLHttpRequest|EventSource|WebSocket|import\s*\(/;
+  // §5.7 P4 裁定：dynamic import 允许，但只能是相对路径（本机 vendor 懒加载，SW 运行时缓存兜底离线）；
+  // 裸标识符或 http(s) 规格的 import() 与其他网络 API 一律禁止。
+  const pattern = /\bfetch\s*\(|XMLHttpRequest|EventSource|WebSocket|import\s*\(\s*['"`](?![./])/;
   for (const f of files) {
     const src = readFileSync(f, 'utf8');
     assert.ok(!pattern.test(src), `${f} 含网络调用`);

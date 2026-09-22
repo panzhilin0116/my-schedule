@@ -924,3 +924,52 @@ input[type="date"], input[type="time"] { font-family: var(--mono); }
   .view { padding-bottom: 40px; }
   .hm-hero-big { font-size: 32px; }
 }
+
+/* ---------- §5.7 一键导入课表浮层 ---------- */
+.imp { display: flex; flex-direction: column; gap: var(--gap); }
+.imp-seg { align-self: flex-start; }
+.imp-hint { font-weight: 700; font-size: 15px; }
+.imp-note { font-size: 12px; color: var(--ink-3); line-height: 1.5; }
+.imp-area {
+  width: 100%; min-height: 140px; resize: vertical;
+  background: var(--surface); border: var(--border); border-radius: var(--r);
+  color: var(--ink); padding: 10px 12px; font-size: 14px; font-family: var(--mono);
+}
+.imp-area:hover { background: var(--bg-alt); }
+.imp-drop {
+  border: var(--border); border-radius: var(--r); background: var(--bg-alt);
+  padding: 24px 12px; text-align: center; font-weight: 700; cursor: pointer;
+  transition: background-color var(--dur) linear;
+}
+.imp-drop:hover { background: var(--surface); }
+.imp-file { display: none; }
+.imp-thumb { max-width: 100%; border: var(--border); border-radius: var(--r); }
+.imp-remove, .imp-clear { margin-top: 4px; }
+.imp-parse { margin-top: 4px; }
+.imp-loss-notice { background: var(--warn); color: #1A1A1A; border: var(--border); border-radius: var(--r); padding: 10px 12px; font-weight: 800; }
+.imp-loss-reasons p { margin: 0 0 6px; line-height: 1.6; }
+.imp-loss-reasons ul { margin: 0; padding-left: 20px; line-height: 1.7; }
+.imp-list { display: flex; flex-direction: column; gap: 10px; }
+.imp-row, .imp-semi-row {
+  display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center;
+  border: var(--border); border-radius: var(--r); background: var(--surface); padding: 10px 12px;
+}
+.imp-row { grid-template-columns: auto 1fr 1fr; }
+.imp-semi-row { grid-template-columns: 1fr; }
+.imp-semi-name { font-weight: 700; }
+.imp-semi-room { font-size: 12px; color: var(--ink-2); }
+.imp-name, .imp-room, .imp-sel {
+  background: var(--surface); border: var(--border); border-radius: var(--r);
+  color: var(--ink); padding: 6px 8px; font-size: 13px; min-width: 0;
+}
+.imp-sel { font-family: var(--mono); }
+.imp-badge { font-size: 11px; font-weight: 800; padding: 2px 6px; border-radius: var(--r-sm); letter-spacing: .03em; }
+.imp-badge-ok { background: var(--ok); color: #1A1A1A; }
+.imp-badge-fix { background: var(--danger); color: #FFFFFF; }
+.imp-badge-conflict { background: var(--warn); color: #1A1A1A; }
+.imp-weeks { font-size: 11px; font-family: var(--mono); color: var(--ink-2); }
+.imp-unparsed { margin-top: 8px; }
+.imp-unparsed summary { cursor: pointer; font-weight: 700; }
+.imp-unparsed-line { font-size: 12px; color: var(--ink-2); padding: 2px 0; word-break: break-all; }
+.imp-confirm, .imp-semi-next { margin-top: 8px; width: 100%; }
+.cd-imported { display: inline-block; font-size: 11px; font-weight: 800; color: #1A1A1A; background: var(--accent); border-radius: var(--r-sm); padding: 2px 8px; }

@@ -6,6 +6,8 @@ import {
 import { WEEK_LABELS } from '../data/semester.js';
 import { openCourseDetail } from '../components/courseDetail.js';
 import { openCourseForm } from '../components/courseForm.js';
+import { openImportOverlay } from '../components/importOverlay.js';
+import { imageHandler } from '../lib/import/imageHandler.js';
 import { loadCourses, removeCourse, upsertCourse } from '../lib/courseStore.js';
 import { renderEmpty } from '../components/emptyState.js';
 import { closeOverlay, toast } from '../lib/feedback.js';
@@ -146,11 +148,13 @@ export function render(el, params, now = new Date()) {
   const courses = loadCourses();
 
   const root = h('div', { class: 'tt' });
+  const openImport = () => openImportOverlay({ onDone: rerender, parseImage: imageHandler });
   root.appendChild(
     h('div', { class: 'tt-head' },
       h('h1', { class: 'tt-title' }, '课表'),
       h('span', { class: 'tt-week' }, week === null ? `非教学周（第${rawWeekNumber(now)}周）` : `第${week}周${weekRangeLabel(now)}`),
       h('button', { class: 'btn tt-today-btn', type: 'button', onclick: () => { selectedDay = weekdayOf(new Date()); rerender(); } }, '今天'),
+      h('button', { class: 'btn tt-import-btn', type: 'button', onclick: openImport }, '⇋ 一键导入'),
       h('button', { class: 'btn tt-add-btn', type: 'button', onclick: () => openCourseForm({ onSaved: rerender }) }, '＋ 添加课程'),
     ),
   );
@@ -162,11 +166,13 @@ export function render(el, params, now = new Date()) {
       onAction: () => openCourseForm({ onSaved: rerender }),
     }));
   } else if (!courses.length) {
-    root.appendChild(renderEmpty({
+    const empty = renderEmpty({
       text: '这个空间的课表还是空的，先把你自己的课加进来',
       actionText: '添加第一节课',
       onAction: () => openCourseForm({ onSaved: rerender }),
-    }));
+    });
+    empty.appendChild(h('button', { class: 'btn tt-empty-import', type: 'button', onclick: openImport }, '导入课表（文字或截图）'));
+    root.appendChild(empty);
   } else {
     if (!desktop) {
       root.appendChild(
