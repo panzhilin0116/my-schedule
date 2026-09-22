@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   planResize, toGray, stretchGray, meanGray, invertIfDarkBackground,
-  preprocessGray, grayToRgba, luma,
+  preprocessGray, grayToRgba, luma, findColorBlocks, polarityToDarkText,
 } from '../lib/import/preprocess.js';
 import {
   itemsFromWords, findDayColumns, findSectionRows, cellToCourse, clusterRows, mergeWordLists,
@@ -218,7 +218,7 @@ test('周六周日列：周末课程同样归位', () => {
   assert.deepEqual({ s: sat.startSection, e: sat.endSection }, { s: 1, e: 2 });
 });
 
-test('mergeWordLists：正反两遍按 IoU 去重，留高置信度', () => {
+test('mergeWordLists：正反两遍按 IoU 去重，留高置信度，不重叠的并存', () => {
   const a = [
     { text: '综合法语(1)', confidence: 60, bbox: { x0: 100, y0: 100, x1: 200, y1: 130 } },
     { text: '教学一号…', confidence: 55, bbox: { x0: 100, y0: 140, x1: 200, y1: 170 } },
@@ -233,6 +233,60 @@ test('mergeWordLists：正反两遍按 IoU 去重，留高置信度', () => {
   assert.equal(fr.confidence, 85);
   assert.ok(merged.some((w) => w.text === '体育(1)'));
   assert.ok(merged.some((w) => w.text === '教学一号…'));
+});
+
+test('mergeWordLists：置信度持平优先 a 表（加强档块内词压过整图糊词）', () => {
+  const blockWord = { text: '综合法语(1)', confidence: 80, bbox: { x0: 100, y0: 100, x1: 200, y1: 130 } };
+  const wholeWord = { text: '绿合法请(1)', confidence: 80, bbox: { x0: 102, y0: 101, x1: 198, y1: 129 } };
+  const merged = mergeWordLists([blockWord], [wholeWord]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].text, '综合法语(1)');
+  assert.equal(merged[0].__fromA, undefined, '临时优先级字段不得外泄');
+  // 整图词置信度真更高时仍按旧的"留高者"规则
+  const better = mergeWordLists([blockWord], [{ ...wholeWord, confidence: 95 }]);
+  assert.equal(better[0].text, '绿合法请(1)');
+});
+
+test('findColorBlocks：白底上的彩底课程块被框出，纯灰字图不误报', () => {
+  const w = 320;
+  const h = 240;
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i += 1) { rgba[i * 4] = 255; rgba[i * 4 + 1] = 255; rgba[i * 4 + 2] = 255; rgba[i * 4 + 3] = 255; }
+  const paint = (x0, y0, x1, y1, [r, g, b]) => {
+    for (let y = y0; y < y1; y += 1) for (let x = x0; x < x1; x += 1) {
+      const p = (y * w + x) * 4;
+      rgba[p] = r; rgba[p + 1] = g; rgba[p + 2] = b;
+    }
+  };
+  paint(40, 50, 140, 100, [235, 120, 120]); // 红块（课名+地点两行的高度）
+  paint(200, 150, 300, 210, [120, 160, 235]); // 蓝块
+  const blocks = findColorBlocks(rgba, w, h);
+  assert.equal(blocks.length, 2);
+  const red = blocks.find((b) => b.x0 <= 40 && b.x1 >= 140 && b.y0 <= 50 && b.y1 >= 100);
+  assert.ok(red, '红块应有覆盖框（含边缘外扩）');
+  assert.ok(red.x1 - red.x0 <= 140 - 40 + 3 * 8, '外扩不超过一格多，不能把邻块吞进来');
+  // 纯灰字白底：饱和差为零 → 0 块
+  const grayOnly = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i += 1) { grayOnly[i * 4] = 245; grayOnly[i * 4 + 1] = 245; grayOnly[i * 4 + 2] = 245; grayOnly[i * 4 + 3] = 255; }
+  assert.equal(findColorBlocks(grayOnly, w, h).length, 0);
+  // 细噪条（8px 高彩条）应被 minSide 滤掉
+  const noisy = Uint8ClampedArray.from(rgba);
+  for (let y = 8; y < 16; y += 1) for (let x = 10; x < 320; x += 1) {
+    const p = (y * w + x) * 4;
+    noisy[p] = 240; noisy[p + 1] = 100; noisy[p + 2] = 100; noisy[p + 3] = 255;
+  }
+  assert.equal(findColorBlocks(noisy, w, h).length, 2, '噪条不该被当成课程块');
+});
+
+test('polarityToDarkText：深底白字反相，黑字白底原样', () => {
+  const whiteOnDark = new Uint8Array(100).fill(10);
+  for (let i = 0; i < 20; i += 1) whiteOnDark[i] = 245;
+  const flipped = polarityToDarkText(whiteOnDark);
+  assert.equal(flipped[0], 10); // 白字变黑字
+  assert.equal(flipped[50], 245); // 深底变白底
+  const blackOnWhite = new Uint8Array(100).fill(245);
+  for (let i = 0; i < 20; i += 1) blackOnWhite[i] = 10;
+  assert.equal(polarityToDarkText(blackOnWhite), blackOnWhite); // 已是黑字白底，不动
 });
 
 test('日期表头锚点：单字星期丢了也能按日历反查星期定列', () => {
@@ -273,11 +327,37 @@ test('OCR 词序乱序：组内按空间阅读序（聚行后按 x）拼接，�
   assert.equal(gridFailed, false);
   const course = items.find((it) => it.room === '教学一号楼');
   assert.ok(course, '同格碎词应归并成同一门课');
-  assert.equal(course.name, '新时代 思想 概论', '课名按 x 从左到右拼接');
+  assert.equal(course.name, '新时代思想概论', '课名按 x 从左到右拼接，相邻汉字 token 连写还原');
+});
+
+test('表头噪声锚点：错位的星期单字（周天列认出"三"）不得污染列锚点', () => {
+  const words = [
+    ...headerWords((d) => `周${'一二三四五六日'[d - 1]}`),
+    mkWord('三', COL_X(7) + 30, 28, 20), // 同行最右侧的假"三"
+  ];
+  const cols = findDayColumns(words, 700);
+  assert.equal(cols.length, 7);
+  assert.deepEqual(cols.map((c) => c.day), [1, 2, 3, 4, 5, 6, 7]);
+  assert.ok(cols[cols.length - 1].x < COL_X(7) + 20, '假"三"应被单调长链剔除');
+});
+
+test('节次锚点插值：漏识的 2/3/6 号按中位行距补回，课不错锚到第 1 节', () => {
+  const words = [
+    mkWord('1', 20, ROW_Y(1), 16),
+    mkWord('4', 20, ROW_Y(4), 16),
+    mkWord('5', 20, ROW_Y(5), 16),
+    mkWord('7', 20, ROW_Y(7), 16),
+  ];
+  const rows = findSectionRows(words, 100);
+  assert.deepEqual(rows.map((r) => r.section), [1, 2, 3, 4, 5, 6, 7]);
+  const s2 = rows.find((r) => r.section === 2);
+  assert.ok(Math.abs(s2.y - ROW_Y(2)) < 12, `插值 y=${s2.y} 应贴近真值 ${ROW_Y(2)}`);
 });
 
 test('内容质量门：锚点在、但课名大半是一两个碎字 → 整体降级半自动（不硬猜）', () => {
   const words = [
+    // 表头之上的手机状态栏/导航栏行：降级清单里不该混这些杂项
+    mkWord('16:19', 40, 5, 50), mkWord('课表', 420, 8, 40),
     ...headerWords((d) => `周${'一二三四五六日'[d - 1]}`),
     ...sectionWords(14),
     ...cellWords(1, 1, 2, ['新时代中国特色社会主义', '教学一号楼3004']),
@@ -291,6 +371,7 @@ test('内容质量门：锚点在、但课名大半是一两个碎字 → 整体
   assert.ok(items.length >= 5);
   assert.ok(items.every((it) => it.status === 'semiAuto' && it.day === null && it.startSection === null));
   assert.ok(items.some((it) => it.name.includes('新时代')));
+  assert.ok(!items.some((it) => /16:19|课表/.test(it.raw)), '状态栏/导航栏行不得混进半自动候选');
 });
 
 // ---------- imageHandler 编排层（node 环境安全护栏） ----------
@@ -303,7 +384,7 @@ test('imageHandler：非浏览器环境下明确报错，绝不上传', async ()
   );
 });
 
-test('vendor 目录：五件套齐全且为真实产物', async () => {
+test('vendor 目录：引擎文件齐全且为真实产物（含非 SIMD 回退核心）', async () => {
   const { readFileSync, statSync } = await import('node:fs');
   const { fileURLToPath } = await import('node:url');
   const { dirname, join } = await import('node:path');
@@ -313,6 +394,9 @@ test('vendor 目录：五件套齐全且为真实产物', async () => {
     ['worker.min.js', 50_000],
     ['tesseract-core-simd-lstm.wasm.js', 1_000_000],
     ['tesseract-core-simd-lstm.wasm', 1_000_000],
+    // 无 SIMD 的旧内核浏览器（360 兼容壳等）：worker 会拼出 -core-lstm 文件名，缺一个就是「识别失败」
+    ['tesseract-core-lstm.wasm.js', 1_000_000],
+    ['tesseract-core-lstm.wasm', 1_000_000],
     ['langs/eng.traineddata.gz', 500_000],
     ['langs/chi_sim.traineddata.gz', 500_000],
   ];
@@ -320,6 +404,8 @@ test('vendor 目录：五件套齐全且为真实产物', async () => {
     const size = statSync(join(root, rel)).size;
     assert.ok(size >= minBytes, `${rel} 只有 ${size} 字节，像是坏文件`);
   }
+  const workerSrc = readFileSync(join(root, 'worker.min.js'), 'utf8');
+  assert.match(workerSrc, /tesseract-core-lstm\.wasm\.js/, 'worker 存在非 SIMD 回退路径，vendor 必须配套');
   const main = readFileSync(join(root, 'tesseract.min.js'), 'utf8');
   assert.match(main, /createWorker/, '主包应导出 createWorker');
 });

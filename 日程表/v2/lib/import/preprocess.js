@@ -87,3 +87,95 @@ export function grayToRgba(gray, width, height) {
   }
   return out;
 }
+
+export function invertGray(gray) {
+  const out = new Uint8Array(gray.length);
+  for (let i = 0; i < gray.length; i += 1) out[i] = 255 - gray[i];
+  return out;
+}
+
+/** 极性修正：字（墨）永远是少数派——近黑像素比近白像素多 = 深底白字 → 反相成黑字白底；
+ *  否则原样。彩底块拉伸后底色推向一极、字推向另一极，用两极的数量对比判断最稳。 */
+export function polarityToDarkText(gray) {
+  let dark = 0;
+  let light = 0;
+  for (let i = 0; i < gray.length; i += 1) {
+    if (gray[i] < 64) dark += 1;
+    else if (gray[i] > 192) light += 1;
+  }
+  return dark > light ? invertGray(gray) : gray;
+}
+
+// 彩底白字课程块检测：整图反相补跑对"浅彩底"救不全（拉伸后白字仍糊），
+// 加强档按块裁剪放大逐块识别——这里先把像素里的高饱和色块圈出来。
+export const BLOCK_CELL = 8; // 下采样格边长（像素）
+export const BLOCK_MIN_SAT = 60; // 组内 max-min 均值超过此值才算"有彩色"
+export const BLOCK_MIN_RATIO = 0.25; // 彩色像素占包围盒比例下限，滤噪点
+export const BLOCK_MIN_SIDE = 32; // 下限略大于单格噪声盒（24px），图标/噪点不进来，真实课程块远大于此
+
+/** RGBA → 彩色格掩码（每格组内平均 max-min 饱和 > 阈值）。 */
+export function colorCellMask(rgba, width, height, cell = BLOCK_CELL, minSat = BLOCK_MIN_SAT) {
+  const cols = Math.ceil(width / cell);
+  const rows = Math.ceil(height / cell);
+  const mask = new Uint8Array(cols * rows);
+  for (let gy = 0; gy < rows; gy += 1) {
+    for (let gx = 0; gx < cols; gx += 1) {
+      let sum = 0;
+      let n = 0;
+      for (let y = gy * cell; y < Math.min((gy + 1) * cell, height); y += 1) {
+        for (let x = gx * cell; x < Math.min((gx + 1) * cell, width); x += 1) {
+          const p = (y * width + x) * 4;
+          const mx = Math.max(rgba[p], rgba[p + 1], rgba[p + 2]);
+          const mn = Math.min(rgba[p], rgba[p + 1], rgba[p + 2]);
+          sum += mx - mn;
+          n += 1;
+        }
+      }
+      if (n && sum / n > minSat) mask[gy * cols + gx] = 1;
+    }
+  }
+  return { mask, cols, rows };
+}
+
+/** 彩色块探测：下采样掩码 → 4 邻接连通块 → 原图坐标系矩形（带 1 格外扩捞到边缘字）。 */
+export function findColorBlocks(rgba, width, height, opts = {}) {
+  const { cell = BLOCK_CELL, minSat = BLOCK_MIN_SAT, minRatio = BLOCK_MIN_RATIO, minSide = BLOCK_MIN_SIDE } = opts;
+  const { mask, cols, rows } = colorCellMask(rgba, width, height, cell, minSat);
+  const seen = new Uint8Array(mask.length);
+  const blocks = [];
+  for (let i = 0; i < mask.length; i += 1) {
+    if (!mask[i] || seen[i]) continue;
+    seen[i] = 1;
+    const queue = [i];
+    let count = 0;
+    let minX = cols;
+    let maxX = -1;
+    let minY = rows;
+    let maxY = -1;
+    while (queue.length) {
+      const cur = queue.pop();
+      count += 1;
+      const cx = cur % cols;
+      const cy = (cur - cx) / cols;
+      if (cx < minX) minX = cx;
+      if (cx > maxX) maxX = cx;
+      if (cy < minY) minY = cy;
+      if (cy > maxY) maxY = cy;
+      for (const nb of [cur - cols, cur + cols, cx > 0 ? cur - 1 : -1, cx < cols - 1 ? cur + 1 : -1]) {
+        if (nb >= 0 && nb < mask.length && mask[nb] && !seen[nb]) {
+          seen[nb] = 1;
+          queue.push(nb);
+        }
+      }
+    }
+    const boxCells = (maxX - minX + 1) * (maxY - minY + 1);
+    if (count / boxCells < minRatio) continue;
+    const x0 = Math.max(0, (minX - 1) * cell);
+    const y0 = Math.max(0, (minY - 1) * cell);
+    const x1 = Math.min(width, (maxX + 2) * cell);
+    const y1 = Math.min(height, (maxY + 2) * cell);
+    if (x1 - x0 < minSide || y1 - y0 < minSide) continue;
+    blocks.push({ x0, y0, x1, y1 });
+  }
+  return blocks;
+}

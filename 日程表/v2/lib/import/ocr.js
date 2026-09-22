@@ -1,20 +1,34 @@
 // §5.7 P4 本机 OCR 装载器：Tesseract.js v6 与 chi_sim/eng 语言包全部来自
 // vendor/tesseract/（首次用时才加载），识别在浏览器内存内完成，图片永不离开本机。
-import { preprocessGray, planResize, grayToRgba } from './preprocess.js';
+import { preprocessGray, planResize, grayToRgba, invertGray, findColorBlocks, polarityToDarkText } from './preprocess.js';
 
 let workerPromise = null;
 let activeLogger = null;
 
 const vendorUrl = (rel) => new URL(`vendor/tesseract/${rel}`, document.baseURI).href;
 
-function loadScript(src) {
+function loadScriptOnce(src) {
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
     s.src = src;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('无法在本机找到识别引擎文件'));
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error(`missing ${src}`));
     document.head.appendChild(s);
   });
+}
+
+async function loadScript(src) {
+  const file = src.split('/').pop();
+  try {
+    await loadScriptOnce(src);
+  } catch {
+    try {
+      // 一次自动重试：加查询串绕开某些浏览器/兼容壳对失败响应的负缓存
+      await loadScriptOnce(`${src}?retry=1`);
+    } catch {
+      throw new Error(`本机缺少识别引擎文件「${file}」，请刷新页面重试；若仍失败，说明站点发布包缺件，可改用文字粘贴导入`);
+    }
+  }
 }
 
 function loadImage(dataUrl) {
@@ -42,7 +56,7 @@ async function createOcrWorker() {
   if (!globalThis.Tesseract) await loadScript(vendorUrl('tesseract.min.js'));
   return globalThis.Tesseract.createWorker(['chi_sim', 'eng'], 1, {
     workerPath: vendorUrl('worker.min.js'),
-    corePath: vendorUrl(''), // 目录：worker 自己拼 tesseract-core-simd-lstm.wasm.js
+    corePath: vendorUrl(''), // 目录：worker 按 SIMD 能力拼 tesseract-core[-simd]-lstm.wasm.js，两对都要在
     langPath: vendorUrl('langs'),
     gzip: true,
     cacheMethod: 'none', // 语言包已在本地，不再写一份 IndexedDB 缓存
@@ -62,9 +76,10 @@ export function getOcrWorker(onProgress) {
   return workerPromise;
 }
 
-/** dataUrl → 缩放+灰度+拉伸后的两份 canvas：正常版 + 反相版。
+/** dataUrl → 缩放+灰度+拉伸后的两份 canvas：正常版 + 反相版；
+ *  并给出原色 ImageData 供彩底块检测（加强档）。
  *  教务课表的课程块是"彩色底 + 白字"，灰度后对比度趋同；反相一遍能救回白字，
- *  两遍结果按 IoU 合并（grid.mergeWordLists）。 */
+ *  两遍结果按 IoU 合并（grid.mergeWordLists）；整图两遍仍糊的块由逐块识别补认。 */
 export async function preprocessDataUrl(dataUrl) {
   const img = await loadImage(dataUrl);
   const { scale, width, height } = planResize(img.naturalWidth || img.width, img.naturalHeight || img.height);
@@ -75,23 +90,47 @@ export async function preprocessDataUrl(dataUrl) {
   ctx.drawImage(img, 0, 0, width, height);
   const id = ctx.getImageData(0, 0, width, height);
   const base = preprocessGray(id.data, width, height);
-  const inverted = new Uint8Array(base.length);
-  for (let i = 0; i < base.length; i += 1) inverted[i] = 255 - base[i];
-  const normal = document.createElement('canvas');
-  normal.width = width;
-  normal.height = height;
-  const nctx = normal.getContext('2d');
-  const nid = nctx.createImageData(width, height);
-  nid.data.set(grayToRgba(base, width, height));
-  nctx.putImageData(nid, 0, 0);
-  const dark = document.createElement('canvas');
-  dark.width = width;
-  dark.height = height;
-  const dctx = dark.getContext('2d');
-  const did = dctx.createImageData(width, height);
-  did.data.set(grayToRgba(inverted, width, height));
-  dctx.putImageData(did, 0, 0);
-  return { canvas: normal, inverted: dark, width, height, scale };
+  const normal = grayCanvas(base, width, height);
+  const dark = grayCanvas(invertGray(base), width, height);
+  return { canvas: normal, inverted: dark, color: id, width, height, scale };
+}
+
+function grayCanvas(gray, width, height) {
+  const c = document.createElement('canvas');
+  c.width = width;
+  c.height = height;
+  const ctx = c.getContext('2d');
+  const id = ctx.createImageData(width, height);
+  id.data.set(grayToRgba(gray, width, height));
+  ctx.putImageData(id, 0, 0);
+  return c;
+}
+
+/** 彩色块裁剪 → 放大到识字友好尺寸 → 灰度拉伸 + 极性修正（白字彩底 → 黑字白底）。 */
+function blockToGrayCanvas(colorCanvas, width, height, rect) {
+  const x0 = Math.max(0, Math.floor(rect.x0));
+  const y0 = Math.max(0, Math.floor(rect.y0));
+  const x1 = Math.min(width, Math.ceil(rect.x1));
+  const y1 = Math.min(height, Math.ceil(rect.y1));
+  const bw = x1 - x0;
+  const bh = y1 - y0;
+  if (bw < 2 || bh < 2) return null;
+  const crop = document.createElement('canvas');
+  crop.width = bw;
+  crop.height = bh;
+  const cctx = crop.getContext('2d', { willReadFrequently: true });
+  cctx.drawImage(colorCanvas, x0, y0, bw, bh, 0, 0, bw, bh);
+  const target = Math.max(bw, bh);
+  const fit = target < 240 ? Math.min(3, 240 / target) : 1; // 小块放大补清晰度，大块不动
+  const w = Math.max(2, Math.round(bw * fit));
+  const h = Math.max(2, Math.round(bh * fit));
+  const up = document.createElement('canvas');
+  up.width = w;
+  up.height = h;
+  const uctx = up.getContext('2d', { willReadFrequently: true });
+  uctx.drawImage(crop, 0, 0, w, h);
+  const uid = uctx.getImageData(0, 0, w, h);
+  return grayCanvas(polarityToDarkText(preprocessGray(uid.data, w, h)), w, h);
 }
 
 function flattenWords(data) {
@@ -107,16 +146,51 @@ function flattenWords(data) {
   return out;
 }
 
+const MAX_BLOCKS = 40;
+const MAX_BLOCK_WORDS = 400;
+
 /** @returns {Promise<{words:Array,width:number,height:number,confidence:number}>} 坐标为预处理后图像坐标系 */
 export async function recognizeImage(dataUrl, onProgress) {
   const worker = await getOcrWorker(onProgress);
-  const { canvas, inverted, width, height } = await preprocessDataUrl(dataUrl);
+  const { canvas, inverted, color, width, height } = await preprocessDataUrl(dataUrl);
   onProgress?.('识别文字… 0%');
   // v6 坑：output 配置必须在 recognize 第三参传，createWorker 里的不生效
   const { data: a } = await worker.recognize(canvas, {}, { blocks: true });
-  onProgress?.('识别文字… 50%');
+  onProgress?.('识别文字… 40%');
   const { data: b } = await worker.recognize(inverted, {}, { blocks: true });
   const { mergeWordLists } = await import('./grid.js');
-  const words = mergeWordLists(flattenWords(a), flattenWords(b));
-  return { words, width, height, confidence: Math.max(a.confidence ?? 0, b.confidence ?? 0) };
+  let words = mergeWordLists(flattenWords(a), flattenWords(b));
+  const wholeConfidence = Math.max(a.confidence ?? 0, b.confidence ?? 0);
+
+  // 加强档：彩底白字块整图两遍仍易糊，逐块裁剪放大补认；块内结果优先并入
+  const colorCanvas = document.createElement('canvas');
+  colorCanvas.width = width;
+  colorCanvas.height = height;
+  colorCanvas.getContext('2d').putImageData(color, 0, 0);
+  const blocks = findColorBlocks(color.data, width, height).slice(0, MAX_BLOCKS);
+  if (blocks.length) {
+    const blockWords = [];
+    for (let i = 0; i < blocks.length && blockWords.length < MAX_BLOCK_WORDS; i += 1) {
+      onProgress?.(`加强识别彩底课程块 ${i + 1}/${blocks.length}…`);
+      const rect = blocks[i];
+      const piece = blockToGrayCanvas(colorCanvas, width, height, rect);
+      if (!piece) continue;
+      try {
+        const { data } = await worker.recognize(piece, {}, { blocks: true });
+        for (const w of flattenWords(data)) {
+          blockWords.push({
+            ...w,
+            bbox: {
+              x0: rect.x0 + w.bbox.x0 / piece.width * (rect.x1 - rect.x0),
+              y0: rect.y0 + w.bbox.y0 / piece.height * (rect.y1 - rect.y0),
+              x1: rect.x0 + w.bbox.x1 / piece.width * (rect.x1 - rect.x0),
+              y1: rect.y0 + w.bbox.y1 / piece.height * (rect.y1 - rect.y0),
+            },
+          });
+        }
+      } catch { /* 单块失败不否决整图结果 */ }
+    }
+    if (blockWords.length) words = mergeWordLists(blockWords, words);
+  }
+  return { words, width, height, confidence: wholeConfidence };
 }

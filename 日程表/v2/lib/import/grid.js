@@ -58,6 +58,23 @@ function dayOfHeaderWord(text) {
   return many.length === 1 && t.length <= 4 ? many[0].day : null;
 }
 
+/** 按 x 排序后取"星期序号严格递增"的最长子序列：孤立的错位单字（周天列里认出的"三"）当不了列锚点。 */
+function monotoneByX(seen) {
+  const cols = [...seen.entries()].map(([day, x]) => ({ day, x })).sort((a, b) => a.x - b.x);
+  const dp = cols.map(() => 1);
+  const prev = cols.map(() => -1);
+  let bestI = 0;
+  for (let i = 0; i < cols.length; i += 1) {
+    for (let j = 0; j < i; j += 1) {
+      if (cols[j].day < cols[i].day && dp[j] + 1 > dp[i]) { dp[i] = dp[j] + 1; prev[i] = j; }
+    }
+    if (dp[i] > dp[bestI]) bestI = i;
+  }
+  const chain = [];
+  for (let i = bestI; i >= 0; i = prev[i]) chain.unshift(cols[i]);
+  return dp[bestI] >= 2 ? chain : [];
+}
+
 /** 表头 → 星期列锚点 [{day,x}]：取最靠上、命中 ≥2 个不同星期的一行；表头必须在上半幅。 */
 export function findDayColumns(words, imgHeight) {
   let best = null;
@@ -68,14 +85,15 @@ export function findDayColumns(words, imgHeight) {
       if (day && !seen.has(day)) seen.set(day, cx(w));
     }
     if (seen.size < 2) continue;
-    const cols = [...seen.entries()].map(([day, x]) => ({ day, x })).sort((a, b) => a.x - b.x);
-    if (!best || row.y < best.y) best = { y: row.y, cols };
+    const cols = monotoneByX(seen);
+    if (cols.length >= 2 && (!best || row.y < best.y)) best = { y: row.y, cols };
   }
   if (!best || best.y > imgHeight * 0.5) return null;
   return best.cols;
 }
 
-/** 左列节次号 → [{section,y}]：x 在首列锚点左侧、编号沿 y 单调递增，≥2 个才认。 */
+/** 左列节次号 → [{section,y}]：x 在首列锚点左侧、编号沿 y 单调递增，≥2 个才认。
+ *  漏识的号（截断/白字糊掉）按中位行距插值补回，缺 2/3 号时课不会全部错锚到第 1 节。 */
 export function findSectionRows(words, firstColX) {
   const labels = [];
   for (const w of words) {
@@ -94,7 +112,22 @@ export function findSectionRows(words, firstColX) {
     }
     inc.push(l);
   }
-  return inc.length >= 2 ? inc : null;
+  if (inc.length < 2) return null;
+  const steps = [];
+  for (let i = 1; i < inc.length; i += 1) steps.push((inc[i].y - inc[i - 1].y) / (inc[i].section - inc[i - 1].section));
+  const step = steps.sort((a, b) => a - b)[Math.floor(steps.length / 2)];
+  const out = [inc[0]];
+  for (let i = 1; i < inc.length; i += 1) {
+    const gap = inc[i].section - out[out.length - 1].section;
+    if (gap > 1 && step > 4) {
+      const per = (inc[i].y - out[out.length - 1].y) / gap;
+      for (let s = out[out.length - 1].section + 1; s < inc[i].section; s += 1) {
+        out.push({ section: s, y: out[out.length - 1].y + per });
+      }
+    }
+    out.push(inc[i]);
+  }
+  return out;
 }
 
 function nearestIndex(anchors, value) {
@@ -116,11 +149,23 @@ function looksLikeCourseName(text) {
   return !looksLikeRoom(t);
 }
 
-/** 组内文本按阅读序拼接：先聚行、行内按 x、行间按 y（OCR 词序在合并两遍后是乱的）。 */
+const CJK_RE = /[\u4e00-\u9fff]/;
+/** 组内文本按阅读序拼接：先聚行、行内按 x、行间按 y（OCR 词序在合并两遍后是乱的）。
+ *  chi_sim 常把中文词拆成单字 token——相邻汉字 token 直接连写还原（"新 时 代"→"新时代"），
+ *  拉丁/数字 token 之间保留空格。 */
 function readInOrder(items) {
   return clusterRows(items)
-    .map((r) => [...r.items].sort((a, b) => a.bbox.x0 - b.bbox.x0).map((w) => w.text).join(' '))
+    .map((r) => joinTokens([...r.items].sort((a, b) => a.bbox.x0 - b.bbox.x0).map((w) => w.text)))
     .join(' ');
+}
+
+function joinTokens(tokens) {
+  let out = '';
+  for (const t of tokens) {
+    const prev = out[out.length - 1];
+    out += out && CJK_RE.test(prev) && CJK_RE.test(t[0]) ? t : `${out ? ' ' : ''}${t}`;
+  }
+  return out;
 }
 
 /** 单元格文本 → 课名/地点：周次片段进 weeks，首个"像场所"或房号数字片段作地点。 */
@@ -168,21 +213,30 @@ export function groupColumnWords(words, colAnchors, headerY) {
   return { groups, stray };
 }
 
-/** 正相/反相两遍词合并：IoU>0.3 视为同一词，留置信度高者；其余并存。纯函数可测。 */
+/** IoU>0.3 视为同一词：置信度不同留高者；持平留 a 表（先列者）——
+ *  加强档里 a = 彩底块裁剪识别的词，小图识别更聚焦，同分时应压过整图识别结果。
+ *  其余并存。纯函数可测。 */
 export function mergeWordLists(a, b) {
-  const out = [...(a ?? []), ...(b ?? [])].filter((w) => w && w.bbox && w.text);
+  const out = [...(a ?? []).map((w) => ({ ...w, __fromA: true })), ...(b ?? [])]
+    .filter((w) => w && w.bbox && w.text);
   const kept = [];
   const byConf = [...out].sort((x, y) => (y.confidence ?? 0) - (x.confidence ?? 0));
   for (const w of byConf) {
     const dupIdx = kept.findIndex((k) => iou(k.bbox, w.bbox) > 0.3);
     if (dupIdx >= 0) {
       const k = kept[dupIdx];
-      if ((w.confidence ?? 0) > (k.confidence ?? 0) && w.text !== k.text) kept[dupIdx] = w;
+      const wins = (w.confidence ?? 0) > (k.confidence ?? 0)
+        || ((w.confidence ?? 0) === (k.confidence ?? 0) && !k.__fromA && w.__fromA);
+      if (wins && w.text !== k.text) kept[dupIdx] = { ...w, __fromA: k.__fromA };
       continue;
     }
     kept.push(w);
   }
-  return kept;
+  return kept.map((w) => {
+    if (!('__fromA' in w)) return w;
+    const { __fromA, ...rest } = w;
+    return rest;
+  });
 }
 
 function iou(p, q) {
@@ -197,14 +251,15 @@ function iou(p, q) {
   return inter / (areaP + areaQ - inter);
 }
 
-/** 锚点判不出、或网格内容过碎时的降级：整行词组退化成"只有课名/地点"的半自动候选。 */
-function degradeToSemi(clean) {
+/** 锚点判不出、或网格内容过碎时的降级：整行词组退化成"只有课名/地点"的半自动候选。
+ *  headerY 已知（星期表头定住了）时，表头以上的行都是手机状态栏/App 导航栏，不算候选。 */
+function degradeToSemi(clean, headerY = 0) {
   // 纯锚点行（"一 二 三…"、竖排节次号）不是候选，其余行全保留给用户补全
-  const rows = clusterRows(clean).filter((r) => !r.items.every(
+  const rows = clusterRows(clean).filter((r) => !(headerY && r.y < headerY - 5) && !r.items.every(
     (w) => dayOfHeaderWord(w.text) || SECTION_RE_EXACT.test(String(w.text).trim()),
   ));
   const items = rows.map((row, i) => {
-    const text = [...row.items].sort((a, b) => a.bbox.x0 - b.bbox.x0).map((w) => w.text).join(' ');
+    const text = joinTokens([...row.items].sort((a, b) => a.bbox.x0 - b.bbox.x0).map((w) => w.text));
     const { name, room, weeks } = cellToCourse(text);
     return {
       raw: text, name: name || text, day: null, startSection: null, endSection: null,
@@ -240,7 +295,7 @@ export function itemsFromWords(words, size = {}) {
   const rowAnchors = findSectionRows(anchors, firstColX);
   const headerY = cols && clusterRows(headerWords)[0] ? clusterRows(headerWords)[0].y : 0;
 
-  if (!cols || !rowAnchors) return degradeToSemi(clean);
+  if (!cols || !rowAnchors) return degradeToSemi(clean, cols ? headerY : 0);
 
   const used = new Set([...headerWords, ...anchors]);
   const body = clean.filter((w) => !used.has(w) && !isNoiseLine(w.text));
@@ -298,7 +353,7 @@ export function itemsFromWords(words, size = {}) {
     const singles = toks.filter((l) => l <= 1).length;
     return Math.max(...toks) >= 3 && singles / toks.length <= 0.4;
   };
-  if (rebuilt.length && rebuilt.filter(solidItem).length / rebuilt.length < 0.6) return degradeToSemi(clean);
+  if (rebuilt.length && rebuilt.filter(solidItem).length / rebuilt.length < 0.6) return degradeToSemi(clean, headerY);
 
   const items = rebuilt.map((it, i) => ({
     ...it,

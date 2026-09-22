@@ -162,10 +162,10 @@ test('首屏骨架：index.html 的 #view 自带骨架，首次渲染即被替�
   stop();
 });
 
-test('Service Worker：sw.js 存在且缓存清单完整（§5.7 起升 schedule-v5）', () => {
+test('Service Worker：sw.js 存在且缓存清单完整（§5.7 起逐轮发布升版本号，本轮 v6）', () => {
   const swPath = join(V2, 'sw.js');
   const swSrc = readFileSync(swPath, 'utf8');
-  assert.match(swSrc, /const CACHE = ['"]schedule-v5['"]/);
+  assert.match(swSrc, /const CACHE = ['"]schedule-v6['"]/);
   assert.match(swSrc, /ASSETS\s*=\s*\[/);
   // 清单必须覆盖 v2 全部源文件：新增模块漏进离线缓存是历史事故点，遍历目录防漂移
   const required = ['/index.html', '/styles.css', '/main.js'];
