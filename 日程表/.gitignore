@@ -20,3 +20,4 @@ v2/dist/
 
 # OCR 冒烟测试的临时图与产物：只留本地，不入库
 .smoke/
+dev/smoke/
