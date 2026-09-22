@@ -15,6 +15,10 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.wasm': 'application/wasm',
+  '.gz': 'application/gzip',
 };
 
 const server = createServer(async (req, res) => {

@@ -5,9 +5,13 @@ export async function imageHandler(dataUrl, hooks = {}) {
   const { onProgress = () => {} } = hooks;
   onProgress('加载识别引擎…');
   const { recognizeImage } = await import('./ocr.js');
-  onProgress('识别文字…');
-  const words = await recognizeImage(dataUrl, onProgress);
+  const { words, width, height } = await recognizeImage(dataUrl, onProgress);
   onProgress('还原课表网格…');
   const { itemsFromWords } = await import('./grid.js');
-  return itemsFromWords(words);
+  const result = itemsFromWords(words, { width, height });
+  // 词几乎没抓到 = 图根本没读出来，与"有词但网格没认出来"区分开，前者直接报错
+  if (!result.items.length && !result.unparsed.length && result.gridFailed) {
+    throw new Error('没能从图里读出文字，请换清晰、正向的课表截图');
+  }
+  return result;
 }

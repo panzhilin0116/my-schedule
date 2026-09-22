@@ -17,3 +17,6 @@ v2/dist/
 
 # Qoder Sites 描述符：每次 prepare/publish 都会变，内含云端资源 ID 与首页快照，只留本地
 *.qoder.site
+
+# OCR 冒烟测试的临时图与产物：只留本地，不入库
+.smoke/
