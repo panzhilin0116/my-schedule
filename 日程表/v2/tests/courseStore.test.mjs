@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   loadCourses, saveCourses, upsertCourse, removeCourse,
+  removeImportedCourses, hasImportedCourses,
   validateCourse, newCourseId, COURSE_KEY_BASE, COURSE_COLORS, StoreError,
 } from '../lib/courseStore.js';
 
@@ -82,4 +83,48 @@ test('newCourseId 唯一', () => {
 
 test('COURSE_COLORS 与样式色板一致', () => {
   assert.deepEqual(COURSE_COLORS, ['blue', 'purple', 'green', 'orange', 'cyan', 'pink']);
+});
+
+// ---- §5.7 P1：weeks 字段 + 周次感知冲突 + 导入标记 ----
+
+test('upsertCourse：合法 weeks 归一化保存，非法 weeks 落回缺省（不存字段）', () => {
+  const st = fakeStorage();
+  const base = { id: 'c1', name: '数学', day: 1, startSection: 1, endSection: 2, color: 'blue', createdAt: 1 };
+  upsertCourse({ ...base, weeks: { from: 1, to: 16, parity: 'odd' } }, st);
+  assert.deepEqual(loadCourses(st)[0].weeks, { from: 1, to: 14, parity: 'odd' });
+  upsertCourse({ ...base, weeks: { from: 9, to: 2 } }, st);
+  assert.equal('weeks' in loadCourses(st)[0], false);
+  upsertCourse({ ...base, importedFrom: 'import' }, st);
+  assert.equal(loadCourses(st)[0].importedFrom, 'import');
+});
+
+test('validateCourse：周次感知冲突（§5.7 升级）', () => {
+  const existing = [{ id: 'c1', name: '单周法语', day: 2, startSection: 3, endSection: 4, weeks: { from: 1, to: 14, parity: 'odd' } }];
+  // 同星期同节次但 odd vs even → 不冲突、可并存
+  assert.equal(validateCourse({ id: 'x', name: '双周体育', day: 2, startSection: 3, endSection: 4, weeks: { from: 1, to: 14, parity: 'even' } }, existing).ok, true);
+  // 同星期同节次同为 odd → 冲突
+  const clash = validateCourse({ id: 'x', name: '另一门', day: 2, startSection: 4, endSection: 5, weeks: { from: 1, to: 14, parity: 'odd' } }, existing);
+  assert.equal(clash.ok, false);
+  assert.equal(clash.errors.startSection, '与「单周法语」时间冲突');
+  // 周次范围无共同周（1–2 的双周 vs 1–14 的单周：只有第 2 周相遇，但对方是单周课）→ 不冲突
+  assert.equal(validateCourse({ id: 'x', name: '双周短课', day: 2, startSection: 3, endSection: 4, weeks: { from: 1, to: 2, parity: 'even' } }, existing).ok, true);
+  // 区间完全不相交 → 不冲突
+  assert.equal(validateCourse({ id: 'x', name: '后段课', day: 2, startSection: 3, endSection: 4, weeks: { from: 8, to: 14, parity: 'all' } }, [{ ...existing[0], weeks: { from: 1, to: 5, parity: 'all' } }]).ok, true);
+  // 旧口径：双方都无 weeks → 与升级前行为一致，重叠即冲突
+  assert.equal(validateCourse({ id: 'x', name: '普通课', day: 2, startSection: 3, endSection: 4 }, [{ id: 'c0', name: '无周次课', day: 2, startSection: 3, endSection: 4 }]).ok, false);
+  // 无 weeks（全周）与单周课重叠 → 冲突
+  assert.equal(validateCourse({ id: 'x', name: '全周课', day: 2, startSection: 3, endSection: 4 }, existing).ok, false);
+});
+
+test('removeImportedCourses：只删带标记课，手加课不动，返回被删清单', () => {
+  const st = fakeStorage();
+  upsertCourse({ id: 'a', name: '导入A', day: 1, startSection: 1, endSection: 2, color: 'blue', createdAt: 1, importedFrom: 'import' }, st);
+  upsertCourse({ id: 'b', name: '手加B', day: 3, startSection: 3, endSection: 4, color: 'green', createdAt: 2 }, st);
+  upsertCourse({ id: 'c', name: '导入C', day: 5, startSection: 5, endSection: 6, color: 'orange', createdAt: 3, importedFrom: 'import' }, st);
+  assert.equal(hasImportedCourses(st), true);
+  const removed = removeImportedCourses(st);
+  assert.deepEqual(removed.map((c) => c.id).sort(), ['a', 'c']);
+  assert.deepEqual(loadCourses(st).map((c) => c.id), ['b']);
+  assert.equal(hasImportedCourses(st), false);
+  assert.deepEqual(removeImportedCourses(st), []); // 幂等
 });

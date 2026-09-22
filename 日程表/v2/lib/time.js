@@ -1,4 +1,5 @@
 import { SEMESTER, PERIODS, WEEK_LABELS } from '../data/semester.js';
+import { weekContains } from './weeks.js';
 
 const MS_DAY = 86400000;
 
@@ -78,9 +79,12 @@ export function courseTimes(course, date) {
 }
 
 export function coursesOn(date, courses = []) {
-  if (!isTeachingWeek(date)) return [];
+  const week = weekOf(date);
+  if (week === null) return [];
   const wd = weekdayOf(date);
-  return courses.filter((c) => Number(c.day) === wd).sort((a, b) => a.startSection - b.startSection);
+  return courses
+    .filter((c) => Number(c.day) === wd && weekContains(c.weeks, week))
+    .sort((a, b) => a.startSection - b.startSection);
 }
 
 export function currentCourse(date, now, courses = []) {

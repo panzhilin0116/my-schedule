@@ -84,3 +84,12 @@ test('格式化与日期工具', () => {
   assert.equal(diffDays(parseDate('2026-09-20'), parseDate('2026-09-23')), 3);
   assert.equal(diffDays(parseDate('2026-09-20'), parseDate('2026-09-19')), -1);
 });
+
+test('coursesOn：§5.7 weeks 感知的今日过滤', () => {
+  const mon3 = parseDate('2026-09-21'); // 第 3 周（奇数周）周一
+  const mk = (name, weeks) => ({ id: name, name, day: 1, startSection: 1, endSection: 2, weeks });
+  const list = [mk('无周次', undefined), mk('单周课', { from: 1, to: 14, parity: 'odd' }), mk('双周课', { from: 1, to: 14, parity: 'even' }), mk('1-2周课', { from: 1, to: 2, parity: 'all' })];
+  assert.deepEqual(coursesOn(mon3, list).map((c) => c.name), ['无周次', '单周课']);
+  const mon4 = parseDate('2026-09-28'); // 第 4 周周一
+  assert.deepEqual(coursesOn(mon4, list).map((c) => c.name), ['无周次', '双周课']);
+});
