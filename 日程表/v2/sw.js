@@ -1,4 +1,7 @@
-const CACHE = 'schedule-v4';
+const CACHE = 'schedule-v5';
+// 预缓存只放"壳"：图片/文字导入的自有模块都在列；
+// vendor/tesseract 约 10MB 不进清单（没用到图片功能的访客不该被迫下载），
+// 由下方 fetch 事件运行时缓存：首用后离线可复用。
 const ASSETS = [
   '/',
   '/index.html',
@@ -11,12 +14,20 @@ const ASSETS = [
   '/lib/store.js',
   '/lib/courseStore.js',
   '/lib/time.js',
+  '/lib/weeks.js',
+  '/lib/import/tokenize.js',
+  '/lib/import/parseText.js',
+  '/lib/import/imageHandler.js',
+  '/lib/import/ocr.js',
+  '/lib/import/preprocess.js',
+  '/lib/import/grid.js',
   '/views/home.js',
   '/views/tasks.js',
   '/views/timetable.js',
   '/components/courseDetail.js',
   '/components/courseForm.js',
   '/components/emptyState.js',
+  '/components/importOverlay.js',
   '/components/miniCalendar.js',
   '/components/taskForm.js',
   '/data/semester.js',

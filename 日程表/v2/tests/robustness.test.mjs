@@ -162,17 +162,27 @@ test('首屏骨架：index.html 的 #view 自带骨架，首次渲染即被替�
   stop();
 });
 
-test('Service Worker：sw.js 存在且缓存清单完整', () => {
+test('Service Worker：sw.js 存在且缓存清单完整（§5.7 起升 schedule-v5）', () => {
   const swPath = join(V2, 'sw.js');
   const swSrc = readFileSync(swPath, 'utf8');
-  assert.match(swSrc, /const CACHE = ['"]schedule-v4['"]/);
+  assert.match(swSrc, /const CACHE = ['"]schedule-v5['"]/);
   assert.match(swSrc, /ASSETS\s*=\s*\[/);
-  for (const asset of ['/index.html', '/styles.css', '/main.js', '/lib/dom.js', '/views/home.js', '/lib/space.js', '/lib/courseStore.js', '/components/courseForm.js']) {
-    assert.ok(swSrc.includes(asset), `sw.js 缓存清单缺 ${asset}`);
+  // 清单必须覆盖 v2 全部源文件：新增模块漏进离线缓存是历史事故点，遍历目录防漂移
+  const required = ['/index.html', '/styles.css', '/main.js'];
+  for (const dir of ['lib', 'lib/import', 'views', 'components', 'data']) {
+    for (const f of readdirSync(join(V2, dir))) {
+      if (f.endsWith('.js')) required.push(`/${dir}/${f}`);
+    }
   }
+  for (const asset of required) {
+    assert.ok(swSrc.includes(`'${asset}'`), `sw.js 缓存清单缺 ${asset}`);
+  }
+  const assetsList = swSrc.match(/ASSETS\s*=\s*\[([\s\S]*?)\]/)[1];
+  assert.ok(!assetsList.includes('vendor'), 'vendor 的 10MB OCR 资源不得进预缓存清单（走运行时缓存）');
   assert.ok(!swSrc.includes('/data/courses.js'), 'sw.js 不应再缓存已删除的预置课表');
   assert.match(swSrc, /self\.addEventListener\('install'/);
   assert.match(swSrc, /self\.addEventListener\('fetch'/);
+  assert.match(swSrc, /caches\.open\(CACHE\)\.then\(\(c\) => c\.put/, 'fetch 事件要有运行时写缓存（vendor 离线复用靠它）');
   const mainSrc = readFileSync(join(V2, 'main.js'), 'utf8');
   assert.match(mainSrc, /navigator\.serviceWorker\.register\(['"]\/sw\.js['"]\)/);
 });

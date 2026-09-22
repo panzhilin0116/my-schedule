@@ -88,6 +88,7 @@ export function openImportOverlay({ onDone, parseImage = null } = {}) {
     }
     state.parseBtn = h('button', { class: 'btn primary imp-parse', type: 'button', disabled: true, onclick: onParse }, '解析');
     wrap.appendChild(state.parseBtn);
+    syncParseBtn(); // 整段 render 都会重建按钮：文字/图片两态的可用性都要在这里对账
     return wrap;
   }
 

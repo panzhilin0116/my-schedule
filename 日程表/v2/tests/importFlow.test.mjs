@@ -312,13 +312,18 @@ test('清除导入课：取消 confirm 时不动数据', () => {
 // ---------- 图片通道接线（P6 前用替身验证接缝） ----------
 
 test('注入 parseImage 后出现图片分段与上传区', () => {
-  open({ parseImage: async () => ({ items: [], unparsed: [], positionLoss: false }) });
+  const api = open({ parseImage: async () => ({ items: [], unparsed: [], positionLoss: false }) });
   assert.deepEqual(doc.querySelectorAll('.seg-btn').map((b) => b.textContent), ['文字', '图片']);
   doc.querySelectorAll('.seg-btn')[1].click();
   assert.equal(doc.querySelector('.imp-hint').textContent, '上传或粘贴课表截图');
   assert.ok(doc.querySelector('.imp-drop'));
   assert.ok(doc.querySelector('.imp-file'));
   assert.equal(doc.querySelector('.imp-parse').disabled, true, '未选图时解析禁用');
+  // 真浏览器里 disabled 的按钮点不动——桩件会放行 click()，必须显式断言可用性
+  // （P7 浏览器走查抓到过 renderInput 重建按钮后忘了同步图片态的 bug）
+  api.state.image = 'data:image/jpeg;base64,AAAA';
+  api.go('input');
+  assert.equal(doc.querySelector('.imp-parse').disabled, false, '选好图后解析必须可点');
   closeOverlay();
 });
 
